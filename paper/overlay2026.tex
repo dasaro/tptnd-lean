@@ -112,7 +112,7 @@ TPTND is a natural-deduction calculus whose types are probability
 distributions over finite output alphabets and whose terms carry
 sample-size and provenance annotations.
 Introduction rules for \emph{trust} and \emph{untrust} internalize
-a confidence-interval membership test: if the model probability $p$
+a score-test acceptance-band membership test: if the model probability $p$
 lies inside the interval $[\ell,h]$ computed from observed data, the
 calculus derives $\Trust$; otherwise $\UTrust$.
 Elimination rules extract the interval into the typing context,
@@ -356,7 +356,10 @@ implemented and are exercised once in the COMPAS case study
   \textsc{IT}/\textsc{IUT} are one-sample (model $p$ is a known constant).
   \textsc{IT2}/\textsc{IUT2} (new in this work) are two-sample:
   both $f$ and $g$ are estimated, and the test is whether
-  $0$ lies inside the CI for $f{-}g$.}
+  $0$ lies inside the CI for $f{-}g$.
+  In the implementation the two-sample rules are oriented
+  ($f \ge g$); the opposite direction is represented by
+  swapping the premises.}
 \label{tab:trust-intro}
 \end{table}
 
@@ -401,9 +404,16 @@ implemented and are exercised once in the COMPAS case study
 \end{mathpar}
 \medskip\hrule
 \caption{Trust elimination, comparison, and comparison-elimination rules.
+  \textsc{ET}, \textsc{EUT}, and \textsc{ET}$^{\text{ex}}$ are
+  one-sample eliminations: they are not admissible for the
+  two-sample $\Trust_\CItwo$/$\UTrust_\CItwo$, whose interval is
+  for a difference $f{-}g$ rather than for the marginal
+  probability of $\alpha$.
   \textsc{EEx} and \textsc{ENEx} (not shown) re-enter the frequency
   layer under an excess or no-excess certificate, shifting the
-  left observation by a model-derived interval.}
+  left observation by a model-derived interval.
+  \textsc{IEx}/\textsc{INEx} share the orientation convention
+  $f\ge g$ of \textsc{IT2}/\textsc{IUT2}.}
 \label{tab:trust-elim}
 \end{table}
 
@@ -887,12 +897,19 @@ statistics through claim selection and derivation construction
 to a verified certificate, and exhibits the workflow on two
 public datasets spanning criminal justice and mortgage lending.
 
-The main limitation is that the \texttt{Prob} type is clamped
-to $[0,1]$, which loses information when the two-sample CI
-for a negative difference falls entirely below zero.
-In practice this is handled by ordering the premises so
-that the larger rate appears first.
-Future work includes signed-difference probability handling,
+The current implementation treats two-sample comparisons as
+\emph{oriented positive-gap certificates}: the left premise must
+have frequency at least that of the right premise, and the
+opposite direction is represented by swapping premises.  Under
+this side condition, clamping the two-sample acceptance band to
+$[0,1]$ preserves the decision of whether $0$ lies in the
+interval.  A full signed-difference type, with intervals in
+$[-1,1]$ and explicit deficit certificates, together with
+two-sample eliminations into marginal constraints, is left to
+future work; in the present fragment, $\textsc{ET}$,
+$\textsc{EUT}$, and $\textsc{ET}^{\text{ex}}$ are one-sample
+eliminations only.
+Other future work includes signed-difference probability handling,
 connecting to the causal-label extensions
 of~\cite{ceragioli2025causal1}, and a front-end that constructs
 derivation trees from tabular data so domain experts can produce
