@@ -43,9 +43,9 @@
   University of Milan, Italy}
 
 \begin{abstract}
-We present \emph{Leaf}, a Lean~4 implementation of a core fragment of
+We present \emph{TPTND-Lean}, a Lean~4 implementation of a core fragment of
 Trustworthy Probabilistic Typed Natural Deduction (TPTND).
-Leaf type-checks derivation trees whose leaves are empirical observations
+TPTND-Lean type-checks derivation trees whose leaves are empirical observations
 and whose internal nodes are introduction or elimination rules for
 probabilistic connectives, producing machine-checked
 \emph{fairness certificates}.
@@ -68,7 +68,7 @@ Certificates are \emph{conditional}: they verify the derivation
 relative to the supplied counts, the chosen statistical rule, and
 the checker, not the upstream data pipeline.
 The full source, data pipelines, and all derivations are
-publicly available at \url{https://github.com/dasaro/leaf-tptnd}.
+publicly available at \url{https://github.com/dasaro/tptnd-lean}.
 \end{abstract}
 
 \begin{keywords}
@@ -109,7 +109,7 @@ calculus derives $\Trust$; otherwise $\UTrust$.
 Elimination rules extract the interval into the typing context,
 enabling further composition.
 
-In this paper we describe \textbf{Leaf}, a Lean~4 implementation
+In this paper we describe \textbf{TPTND-Lean}, a Lean~4 implementation
 of a core TPTND fragment.  Our contributions are:
 %
 \begin{enumerate}
@@ -299,7 +299,7 @@ $\inferrule{x : \alpha_p \in \Gamma}{\Gamma \vdash x : \alpha_p}$.
 \smallskip\noindent
 The remaining rules (output formation, products, arrows, sum
 types, structural weakening, and contraction) appear
-in~\cite{dasaro2025tptnd} and are implemented in Leaf but not
+in~\cite{dasaro2025tptnd} and are implemented in TPTND-Lean but not
 exercised in the case studies below.  The Bayesian-update rules
 \textsc{I-P} and \textsc{E-P} from~\cite{dasaro2025tptnd} are also
 implemented and are exercised once in the COMPAS case study
@@ -399,12 +399,12 @@ implemented and are exercised once in the COMPAS case study
 \end{table}
 
 % ====================================================================
-\section{Leaf: Implementation in Lean 4}\label{sec:impl}
+\section{TPTND-Lean: Implementation in Lean 4}\label{sec:impl}
 % ====================================================================
 
 \subsection{Kernel}\label{sec:arch}
 
-Leaf is approximately 1\,700 lines of Lean~4: a read-only kernel
+TPTND-Lean is approximately 1\,700 lines of Lean~4: a read-only kernel
 (probability arithmetic, well-formedness, and one checker per
 rule) surfaced through a single entry point,
 $\texttt{checkDerivation}: \mathit{Derivation} \to
@@ -439,13 +439,13 @@ six decimal places to keep denominators bounded.
 The $z$-value for the 95\% two-sided interval is the rational
 $49/25 = 1.96$.
 %
-The square-root rounding is the one place where Leaf is not bit-exact:
+The square-root rounding is the one place where TPTND-Lean is not bit-exact:
 the rounded value can fall on either side of the true $\sqrt{}$ by up to
 $5\cdot10^{-7}$, so each CI endpoint is accurate to within
 $\approx z \cdot 5\cdot10^{-7} \approx 10^{-6}$.
 A derivation in which the model probability $p$ falls within
 this tolerance of an interval boundary is therefore not safely
-decidable by Leaf; we treat it as a known soundness boundary
+decidable by TPTND-Lean; we treat it as a known soundness boundary
 rather than a guaranteed verdict, and none of the case-study
 derivations sit in this regime.
 
@@ -465,7 +465,7 @@ of~\cite{dasaro2025tptnd},
        \Gamma \vdash_{\sigma_B} t_4:\beta_{3/4}}
       {\Gamma \vdash_? t_4:(\alpha+\beta)_{3/2}}\;\smark{I+}
 \]
-would derive a probability of $3/2$.  In Leaf the rule layer
+would derive a probability of $3/2$.  In TPTND-Lean the rule layer
 rejects the $\sigma_A \neq \sigma_B$ premises before any
 arithmetic runs, and as a backstop the value-level primitives
 \texttt{probAdd}, \texttt{probSub}, \texttt{probDiv} and
@@ -496,12 +496,12 @@ compared with (a subset of) itself.
 \subsection{User workflow: producing a fairness
   certificate}\label{sec:workflow}
 
-An auditor produces a Leaf certificate in four stages.
+An auditor produces a TPTND-Lean certificate in four stages.
 
 \smallskip\noindent
 \textbf{1. Group-level summary statistics.}
 The auditor extracts sample sizes and event counts for the
-demographic strata of interest.  No Leaf-specific tooling is
+demographic strata of interest.  No TPTND-Lean-specific tooling is
 required at this stage: SQL, pandas, or R suffice.  For COMPAS
 (Section~\ref{sec:compas}) the inputs are sample sizes and
 high-risk counts for each (race, sex, recidivism-status) cell;
@@ -511,7 +511,7 @@ auditor needs raw data.
 
 \smallskip\noindent
 \textbf{2. Claim selection.}
-The fairness question fixes which Leaf rule closes the
+The fairness question fixes which TPTND-Lean rule closes the
 derivation.  Common patterns:
 \begin{itemize}
 \item \emph{observed rate is consistent with a known benchmark
@@ -575,7 +575,7 @@ taxonomy~\cite{barocas2019fairness}:
 \item \textbf{Predictive parity / calibration}~\cite{chouldechova2017fair}
   ($P(Y{=}1\mid \hat Y{=}1, A{=}a)$ equal across $a$): encoded
   as \textsc{IT2} on the $\hat Y$-conditioned subsets.
-  The certificates produced by Leaf should not be read as
+  The certificates produced by TPTND-Lean should not be read as
   calibration claims: under unequal base rates and a non-perfect
   predictor, calibration / predictive parity and equalized odds
   cannot both hold~\cite{chouldechova2017fair}, so a
@@ -638,7 +638,7 @@ for the Black cohort and $\Gamma^{\text{mdl}}_{WN} \vdash x_{WN}:\HighRisk_{94/4
 import the White benchmark; write
 $\Theta_{FP} = \Gamma^{\text{mdl}}_{WN}, \Gamma_{BN}$ and
 $\sigma_B = \sigma_m \uplus \sigma_f$.
-The Leaf-verified derivation is:
+The TPTND-Lean-verified derivation is:
 %
 \[
 \scriptstyle
@@ -853,7 +853,7 @@ The certifying-algorithms pattern of separating producer from
 verifier is classical~\cite{necula1997pcc,mcconnell2011certifying}.
 VeriFair~\cite{bastani2019verifair} and
 FairSquare~\cite{albarghouthi2017fairsquare} verify fairness
-properties \emph{a priori} (of the model); Leaf instead produces
+properties \emph{a priori} (of the model); TPTND-Lean instead produces
 \emph{a posteriori} certificates from observed data, checkable
 without model access.  Lean~4~\cite{moura2021lean4} has been used
 for large-scale mathematical formalization but, to our knowledge,
@@ -861,7 +861,7 @@ not previously for algorithmic-fairness auditing.  Statistical
 toolkits such as Fairlearn~\cite{bird2020fairlearn},
 AIF360~\cite{bellamy2019aif360}, and
 What-If~\cite{wexler2019whatif} compute metrics but do not
-produce formally verified certificates: Leaf's architectural
+produce formally verified certificates: TPTND-Lean's architectural
 difference is the separation of the (potentially biased)
 \emph{producer} from the (small, auditable) \emph{checker}.
 
@@ -869,7 +869,7 @@ difference is the separation of the (potentially biased)
 \section{Conclusion}\label{sec:concl}
 % ====================================================================
 
-We have presented Leaf, a Lean~4 implementation of a core TPTND
+We have presented TPTND-Lean, a Lean~4 implementation of a core TPTND
 fragment that type-checks derivation trees over real-world
 fairness data.
 The implementation adds two-sample trust rules (\textsc{IT2}/\textsc{IUT2}),

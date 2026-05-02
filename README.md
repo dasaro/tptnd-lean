@@ -1,4 +1,4 @@
-# Leaf
+# TPTND-Lean
 
 Lean 4 implementation of a core fragment of **Trustworthy Probabilistic
 Typed Natural Deduction (TPTND)**, used to produce machine-checked
@@ -18,7 +18,7 @@ lake build                                    # builds the library + 4 binaries
 ./.lake/build/bin/tptnd_tests                 # 13 acceptance + 7 negative tests
 ./.lake/build/bin/compas_audit                # numerical comparison vs ProPublica
 ./.lake/build/bin/compas_from_data            # 12 COMPAS case-study derivations
-./.lake/build/bin/hmda_showcase               # 7 HMDA case-study derivations
+./.lake/build/bin/hmda_showcase               # 6 HMDA case-study derivations
 ```
 
 Each binary exits `0` when every derivation passes the kernel and nonzero
@@ -137,7 +137,7 @@ TPTND/
   Tests.lean              # acceptance tests (8 positive + 7 negative)
   COMPASAudit.lean        # numerical comparison vs ProPublica
   COMPASFromData.lean     # 12 COMPAS derivations
-  HMDAShowcase.lean       # 7 HMDA derivations
+  HMDAShowcase.lean       # 6 HMDA derivations
 
 paper/
   overlay2026.tex         # OVERLAY 2026 submission
