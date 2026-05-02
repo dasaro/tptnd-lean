@@ -46,21 +46,24 @@ Leaf type-checks derivation trees whose leaves are empirical observations
 and whose internal nodes are introduction or elimination rules for
 probabilistic connectives, producing machine-checked
 \emph{fairness certificates}.
-All arithmetic uses exact rationals; confidence intervals
-use the score-test approximation.
-We extend the original one-sample trust rules with two-sample
-variants \textsc{IT2}/\textsc{IUT2} that compare two observed
-populations directly, and we describe the four-stage workflow that
-takes group-level summary statistics through claim selection and
-derivation construction to a verified certificate.
+Counts, frequencies, and stored interval endpoints are exact
+rational; the standard-error term used by the score-test
+acceptance bands is computed by a bounded rational Newton
+iteration.  We extend the original one-sample trust rules with
+two-sample variants \textsc{IT2}/\textsc{IUT2} that compare two
+observed populations directly, and we describe the four-stage
+workflow that takes group-level summary statistics through claim
+selection and derivation construction to a checked certificate.
 Two case studies on public data illustrate the approach:
 (i)~the ProPublica COMPAS recidivism data (6\,172 defendants,
-reproducing the headline racial-bias finding as a certified
-\UTrust{} derivation), and
+reproducing the headline racial-bias finding), and
 (ii)~HMDA mortgage-lending data for Delaware
-(55\,000 originated-or-denied applications across 2022--2023, demonstrating
-multi-year temporal composition via \textsc{Update},
-intersectional analysis, and depth-4 derivation chains).
+(54\,000 originated-or-denied Black/White applications across
+2022--2023, demonstrating multi-year temporal composition via
+\textsc{Update} and intersectional comparisons).
+Certificates are \emph{conditional}: they verify the derivation
+relative to the supplied counts, the chosen statistical rule, and
+the checker, not the upstream data pipeline.
 The full source, data pipelines, and all derivations are
 publicly available at \url{https://github.com/dasaro/leaf-tptnd}.
 \end{abstract}
@@ -120,7 +123,8 @@ of a core TPTND fragment.  Our contributions are:
   (Section~\ref{sec:workflow}).
 \item \textbf{Two case studies} on public data
   (Section~\ref{sec:cases}): COMPAS recidivism scoring and HMDA
-  mortgage lending, producing derivation trees of depth up to~4.
+  mortgage lending, producing derivation trees of depth up to~3
+  that include intersectional and year-over-year comparisons.
 \end{enumerate}
 
 % ====================================================================
@@ -143,7 +147,7 @@ distributions: \emph{expected mode} $t_n:\alpha_{\tilde p}$
 records a model-side prediction that the fraction of $n$ samples
 falling in $\alpha$ is $\tilde p$; \emph{frequency mode}
 $t_n:\alpha_f$ records the empirical fraction $f$.  The trust
-rules reconcile the two via score-test confidence intervals
+rules reconcile the two via score-test acceptance bands
 $\CI(n,f,p)$.
 
 \smallskip\noindent
@@ -202,16 +206,22 @@ $\Gamma \vdash \NoExcess_\CItwo(t_n:\alpha_f \succ u_m:\alpha_g; d,[\ell,h])$
 \end{center}
 
 \noindent
-The one-sample confidence interval is
+The one-sample acceptance band for the proportion $z$-test of a
+fixed null $p$ is
 \(
   \CI(n,f,p) = f \pm z_{.975}\sqrt{p(1{-}p)/n},
 \)
-clamped to $[0,1]$, where $z_{.975}=1.96$.
-The two-sample interval is
+clamped to $[0,1]$, where $z_{.975}=1.96$; the trust rules use
+$p\in\CI(n,f,p)$ as the test condition.
+The two-sample band, used by \textsc{IT2}/\textsc{IUT2} to test
+$f{=}g$, is
 \(
   \CItwo(n,m,f,g) = (f{-}g) \pm z_{.975}\sqrt{\hat p(1{-}\hat p)(1/n+1/m)},
 \)
-with $\hat p = (nf{+}mg)/(n{+}m)$.
+with $\hat p = (nf{+}mg)/(n{+}m)$ the pooled rate under
+$H_0\!:\!p_1{=}p_2$.  We continue to write $\CI/\CItwo$ for these
+bands but they are test-acceptance regions, not classical
+confidence intervals.
 
 \subsection{Global admissibility}\label{sec:admiss}
 
@@ -399,21 +409,20 @@ $\texttt{checkDerivation}: \mathit{Derivation} \to
 and either returns successfully, in which case the tree
 \emph{is} the certificate, or yields an error message naming the
 failing premise.
-Three type-system features keep the kernel sound by construction.
+Three design choices reduce the trusted surface of the checker.
 A probability is wrapped in a $\mathtt{Prob}$ structure carrying
 proof witnesses of $0\le q\le 1$ at construction time, so an
-ill-formed probability is unrepresentable.  The checking monad
-forces every rule to return either a checked result or an
-explicit error: silent failures are not expressible.  Rule names
-are a closed inductive datatype, so the dispatcher is
-exhaustively type-checked and a misspelled rule is a
-compile-time, not a runtime, error.
-$\texttt{checkDerivation}$ is declared \texttt{partial} because
-the recursion over the premise list is opaque to Lean's
-structural-recursion checker; a maliciously crafted cyclic
-``tree'' would therefore not terminate, and a well-founded
-variant on tree depth is left for future work.  In every
-case-study derivation the recursion returns immediately.
+ill-formed probability value is unrepresentable.  The checking
+monad forces every rule to return either a checked result or an
+explicit error, ruling out silent failures.  Rule names are a
+closed inductive datatype, so the dispatcher is exhaustively
+type-checked and a misspelled rule is a compile-time error.
+We do not yet prove a meta-theorem connecting checker success to
+an independently defined semantic validity relation: the current
+trusted base consists of the Lean compiler, the
+\texttt{partial}-declared dispatcher, the rational
+square-root approximation (Section~\ref{sec:arith}), and the
+external pipeline that produces the leaf counts.
 
 \subsection{Rational arithmetic and provenance}\label{sec:arith}
 
@@ -563,10 +572,12 @@ taxonomy~\cite{barocas2019fairness}:
 \item \textbf{Predictive parity / calibration}~\cite{chouldechova2017fair}
   ($P(Y{=}1\mid \hat Y{=}1, A{=}a)$ equal across $a$): encoded
   as \textsc{IT2} on the $\hat Y$-conditioned subsets.
-  Chouldechova's incompatibility result implies that the
-  equalized-odds violation we certify on COMPAS
-  (Section~\ref{sec:compas}) cannot coexist with calibration on
-  the same data, since racial base rates differ.
+  The certificates produced by Leaf should not be read as
+  calibration claims: under unequal base rates and a non-perfect
+  predictor, calibration / predictive parity and equalized odds
+  cannot both hold~\cite{chouldechova2017fair}, so a
+  COMPAS-style audit must make explicit which fairness property
+  is being certified.
 \end{itemize}
 
 \noindent
@@ -582,6 +593,18 @@ TPTND~\cite{ceragioli2025causal1,ceragioli2025causal2}.
 % ====================================================================
 \section{Case Studies}\label{sec:cases}
 % ====================================================================
+
+\smallskip\noindent
+\textbf{What the certificates verify.}
+The certificates produced below are \emph{conditional}.  The
+checker verifies that the supplied counts and the chosen rule
+form a valid TPTND derivation; it does not certify that the
+upstream data extraction (filtering, demographic encoding,
+outcome construction, hypothesis selection) was done correctly.
+Those steps remain part of the external audit trail.  We also
+inherit the standard caveats of the underlying statistical
+tests (binomial sampling, independence, large-sample
+approximation, no multiple-testing correction).
 
 \subsection{COMPAS: recidivism risk scoring}\label{sec:compas}
 
@@ -601,6 +624,12 @@ On the published filter (\texttt{days\_b\_screening\_arrest}~$\in[-30,30]$,
 corresponding observed rates are $641/1514 \approx 42.3\%$ for Black
 and $282/1281 = 94/427 \approx 22.0\%$ for White, preserving the
 ${\sim}1.9\times$ disparity.
+The White FPR is itself a sample statistic, so the statistically
+more appropriate comparison uses \textsc{IUT2}; we re-derive the
+two-sample variant in the HMDA case study below
+(Section~\ref{sec:hmda}, Trees~B and~C) and present the
+\textsc{IUT} version here only for continuity with ProPublica's
+fixed-benchmark framing.
 Let $\Gamma_{BN}$ carry the non-exact assumption $\HighRisk_{[0,1]}$
 for the Black cohort and $\Gamma^{\text{mdl}}_{WN} \vdash x_{WN}:\HighRisk_{94/427}$
 import the White benchmark; write
@@ -707,7 +736,7 @@ Year & Group & Denied & Total & Rate \\
 \label{tab:hmda-data}
 \end{table}
 
-We build seven derivation trees, organised in five cases that
+We build six derivation trees, organised in four cases that
 each highlight a different aspect of the certificate framework:
 
 \smallskip\noindent
@@ -746,31 +775,14 @@ The derivation structure is:
   \Gamma\vdash\UTrust_\CItwo(\ldots;\, [0.1357, 0.1528])
 }\;\smark{IUT2}
 \]
-Since $0 \notin [0.1357, 0.1528]$, it yields \UTrust{}.
+Since $0 \notin [0.1357, 0.1528]$, it yields \UTrust{}.  The
+$\UTrust_\CItwo$ certificate is itself transferable: a regulator
+with the kernel can re-check the entire depth-3 chain
+(\textsc{Obs}$\to$\textsc{Update}$\to$\textsc{IUT2}) without
+access to the raw data.
 
 \smallskip\noindent
-\textbf{Tree~C: full chain (depth~4).}\;
-\textsc{EUT} appends a single step to Tree~B's
-$\UTrust_\CItwo$ certificate, extracting the observed Black
-frequency into a term claim that carries the complement interval
-$\lnot[0.1357, 0.1528]$ in its typing context:
-\[
-\scriptstyle
-\inferrule{
-  \Gamma \vdash \UTrust_\CItwo(t_{12536}:\Denied_{4444/12536};\;
-    8822/41969,\, [0.1357, 0.1528])
-}{
-  \Gamma, x_u:\Denied_{\lnot[0.1357, 0.1528]}
-    \vdash_{\sigma_B} t_{12536}:\Denied_{4444/12536}
-}\;\smark{EUT}
-\]
-where $\Gamma$ is the joint context of the two pooled cohorts
-inherited from Tree~B.  The depth-4 chain
-(\textsc{Obs}$\to$\textsc{Update}$\to$\textsc{IUT2}$\to$\textsc{EUT})
-is verified end-to-end by a single \texttt{checkDerivation} call.
-
-\smallskip\noindent
-\textbf{Trees~D.1/D.2: intersectional certificates (depth~2).}\;
+\textbf{Trees~C.1/C.2: intersectional certificates (depth~2).}\;
 Two auditors independently certify Black-vs-White denial gaps for
 males ($741/1825$ vs.\ $1466/5450$, $\CItwo=[0.1126,0.1614]$) and
 females ($909/2341$ vs.\ $1234/4634$, $\CItwo=[0.0990,0.1449]$);
@@ -779,7 +791,7 @@ with the same kernel without needing access to either auditor's
 raw data.
 
 \smallskip\noindent
-\textbf{Trees~E.1/E.2: year-over-year monitoring (depth~2).}\;
+\textbf{Trees~D.1/D.2: year-over-year monitoring (depth~2).}\;
 Black denial rose 2022$\to$2023 from $33.7\%$ to $37.7\%$
 ($\CItwo=[0.0230,0.0568]$, \UTrust{}); White from $20.0\%$ to
 $22.5\%$ ($\CItwo=[0.0176,0.0334]$, \UTrust{}); both increases
@@ -809,9 +821,8 @@ COMPAS & Caucasian FNR & \smark{IT} & 2 & \Trust \\
        & AA FNR gender & \smark{INEx} & 2 & NoExcess \\
        & \multicolumn{2}{l}{+ 4 derivations with \smark{IUT2, IT2}} & 2 & varied \\
 \midrule
-HMDA   & Benchmark & \smark{IT} & 2 & \Trust \\
+HMDA   & Reference-rate & \smark{IT} & 2 & \Trust \\
        & Temporal pool & \smark{Upd.+IUT2} & 3 & \UTrust \\
-       & Full chain & \smark{Upd.+IUT2+EUT} & 4 & extracted \\
        & Intersect.\ (M) & \smark{IUT2} & 2 & \UTrust \\
        & Intersect.\ (F) & \smark{IUT2} & 2 & \UTrust \\
        & Y-o-Y Black & \smark{IUT2} & 2 & \UTrust \\

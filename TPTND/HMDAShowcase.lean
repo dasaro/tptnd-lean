@@ -537,11 +537,11 @@ private def treeD_intersectional : IO Unit := do
 
   IO.println ""
   if notInConstraint Prob.zero ciM then
-    runTest "Tree D.1: Male racial disparity (Auditor 1)" dIUT2_M
+    runTest "Tree C.1: Male racial disparity (Auditor 1)" dIUT2_M
   else IO.println "  SKIP: male disparity not significant"
 
   if notInConstraint Prob.zero ciF then
-    runTest "Tree D.2: Female racial disparity (Auditor 2)" dIUT2_F
+    runTest "Tree C.2: Female racial disparity (Auditor 2)" dIUT2_F
   else IO.println "  SKIP: female disparity not significant"
 
   IO.println ""
@@ -615,14 +615,14 @@ private def treeE_monitoring : IO Unit := do
     let dIT2B := nd .iT2 [dObsB23, dObsB22] [obsEntryB23, obsEntryB22]
       (.trust trustClaimB)
     IO.println ""
-    runTest "Tree E.1: Black denial rate stable 2022→2023 (IT2)" dIT2B
+    runTest "Tree D.1: Black denial rate stable 2022→2023 (IT2)" dIT2B
     IO.println "    → Certificate: \"No significant change in Black denial rate.\""
   else do
     let utrustClaimB : TrustClaim := .untrust tB23 nB23 Denied fB23 fB22 ciB
     let dIUT2B := nd .iUT2 [dObsB23, dObsB22] [obsEntryB23, obsEntryB22]
       (.trust utrustClaimB)
     IO.println ""
-    runTest "Tree E.1: Black denial rate increased 2022→2023 (IUT2)" dIUT2B
+    runTest "Tree D.1: Black denial rate increased 2022→2023 (IUT2)" dIUT2B
     IO.println "    → Certificate: \"Black denial rate significantly increased\""
     IO.println "    →               from ≈33.7% to ≈37.7% (+4.0 pp).\""
 
@@ -659,14 +659,14 @@ private def treeE_monitoring : IO Unit := do
     let dIT2W := nd .iT2 [dObsW23, dObsW22] [obsEntryW23, obsEntryW22]
       (.trust trustClaimW)
     IO.println ""
-    runTest "Tree E.2: White denial rate stable 2022→2023 (IT2)" dIT2W
+    runTest "Tree D.2: White denial rate stable 2022→2023 (IT2)" dIT2W
     IO.println "    → Certificate: \"No significant change in White denial rate.\""
   else do
     let utrustClaimW : TrustClaim := .untrust tW23 nW23 Denied fW23 fW22 ciW
     let dIUT2W := nd .iUT2 [dObsW23, dObsW22] [obsEntryW23, obsEntryW22]
       (.trust utrustClaimW)
     IO.println ""
-    runTest "Tree E.2: White denial rate increased 2022→2023 (IUT2)" dIUT2W
+    runTest "Tree D.2: White denial rate increased 2022→2023 (IUT2)" dIUT2W
     IO.println "    → Certificate: \"White denial rate significantly increased\""
     IO.println "    →               from ≈20.0% to ≈22.5% (+2.6 pp).\""
 
@@ -739,17 +739,12 @@ def main : IO Unit := do
   treeB_temporal
 
   IO.println ""
-  IO.println "─── C. Full chain: UPDATE→IUT2→EUT (depth 4) ── showcases (b)(d) ───"
-  IO.println ""
-  treeC_fullChain
-
-  IO.println ""
-  IO.println "─── D. Intersectional certificates (depth 2) ── showcases (c) ───"
+  IO.println "─── C. Intersectional certificates (depth 2) ── showcases (c) ───"
   IO.println ""
   treeD_intersectional
 
   IO.println ""
-  IO.println "─── E. Year-over-year monitoring (depth 2) ── showcases (d) ───"
+  IO.println "─── D. Year-over-year monitoring (depth 2) ── showcases (d) ───"
   IO.println ""
   treeE_monitoring
 

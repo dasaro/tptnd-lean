@@ -33,9 +33,8 @@ otherwise; the runners are CI-friendly.
 | §4.1 Genuine non-finding (Trust)       | `compas_from_data`  | `IT` + `ETex` (depth 2)                  |
 | §4.2 HMDA Tree A (reference-rate)      | `hmda_showcase`     | `IT` (depth 2)                           |
 | §4.2 HMDA Tree B (temporal pool)       | `hmda_showcase`     | `Update`×2 + `IUT2` (depth 3)            |
-| §4.2 HMDA Tree C (full chain)          | `hmda_showcase`     | `Obs`→`Update`→`IUT2`→`EUT` (depth 4)    |
-| §4.2 HMDA Trees D.1/D.2 (intersect.)   | `hmda_showcase`     | `IUT2` (depth 2)                         |
-| §4.2 HMDA Trees E.1/E.2 (year-over-yr) | `hmda_showcase`     | `IUT2` (depth 2)                         |
+| §4.2 HMDA Trees C.1/C.2 (intersect.)   | `hmda_showcase`     | `IUT2` (depth 2)                         |
+| §4.2 HMDA Trees D.1/D.2 (year-over-yr) | `hmda_showcase`     | `IUT2` (depth 2)                         |
 
 ## User-facing entry point
 
