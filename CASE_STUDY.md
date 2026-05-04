@@ -75,53 +75,121 @@ claim — the disparity verdict — but the document also carries the other
 sub-trees' conclusions, and any future audit can pick up where this one
 left off by composing with one of the trust-interval entries.
 
-## 3. ASCII derivation tree
+## 3. ASCII derivation trees
+
+These are drawn in standard natural-deduction style — **premises on top,
+conclusion below the rule's horizontal bar**. The rule name labels the
+bar on the right. Each `Obs` / `Identity` line at the very top of a
+tree is a leaf with no premises (the "─── obs" / "─── id" mark above it
+just stands for "no premise"). Read each sub-tree top-down; read each
+horizontal bar as *"from these premises, by this rule, conclude this"*.
+
+### subA — ProPublica FPR pipeline
 
 ```text
-                                                          WeakeningS  ← root
-                                                ┌─────────────┴─────────────┐
-                                                │                           │
-                                            WeakeningS                   Contraction       (subE)
-                                       ┌────────┴────────┐                  │
-                                       │                 │                  │
-                                  WeakeningS            E→                 Obs
-                                  ┌────┴────┐         ┌─┴─┐          (priors loaded as
-                                  │         │         │   │           interval entries)
-                              WeakeningS   E×L       I→  Obs                              (subD)
-                            ┌──────┴──────┐          │
-                            │             │         Obs
-                       WeakeningS         ET                                              (subB right)
-                       ┌────┴────┐         │                                              (subC right)
-                       │         │        IT2
-                      EUT       E→      ┌──┴──┐
-                       │      ┌──┴──┐   Obs   Obs
-                      IUT2   I→   Obs
-                       │      │
-                    Update   EUT                                                           (subA' right)
-                       │      │
-                      I+    IUT
-                       │     │
-                      Obs   Identity                                                       (subA + subA' leaves)
-
-  subA  (left spine):  Obs ×8 → I+ ×4 → Update ×2 → IUT2 → EUT
-                       (the ProPublica FPR backbone)
-
-  subA' (right of subA, parallel depth):
-                       Obs+Identity → IUT → EUT → I→ → E→
-                       (the calibration-on-Black-PPV chain)
-
-  subB  Northpointe PPV:                Obs ×2 → IT2 → ET
-  subC  Joint independence audit:        Obs ×2 → I× → E×L
-  subD  Calibration via I→/E→:           Obs ×2 → I→ → E→
-  subE  Prior consolidation:             Obs → Contraction
+─── obs       ─── obs        ─── obs       ─── obs        ─── obs       ─── obs        ─── obs       ─── obs
+BM:Med_{198/  BM:High_{312/  BF:Med_{56/   BF:High_{75/   WM:Med_{130/  WM:High_{62/   WF:Med_{70/   WF:High_{20/
+       1168}        1168}          346}          346}            969}         969}            312}         312}
+──────────────────── I+      ──────────────────── I+      ──────────────────── I+      ──────────────────── I+
+   BM:Flagged_{510/1168}        BF:Flagged_{131/346}         WM:Flagged_{192/969}         WF:Flagged_{90/312}
+   ──────────────────────────────────── Update             ──────────────────────────────────── Update
+            B:Flagged_{641/1514}                                     W:Flagged_{282/1281}
+            ─────────────────────────────────────────────────────────────────────────────────── IUT2
+                                            UTrust(equal-FPR : 0 ∉ [16.8 %, 23.8 %])
+                                            ─────────────────────────────────────────── EUT
+                                              B:Flagged_{641/1514}, ⟨ x_FPR : ¬[16.8 %, 23.8 %] in ctx ⟩
 ```
 
-The tree is asymmetric on purpose. ProPublica's FPR pipeline is the
-deepest spine because it does the most work — eight raw observation
-leaves, four binarisation steps, two pooling steps, the two-sample
-test, and the interval extraction. The other sub-trees are shorter
-because their narratives are shorter, and they enter the audit by
-being weakened-in alongside the FPR backbone.
+### subA' — calibration on Black PPV (one-sample)
+
+```text
+─── identity                    ─── obs
+x_model : Recidivated_{0.5}     v_B : Recidivated_{775/1234}
+──────────────────────────────────────────────────────────── IUT
+              UTrust(model 0.5 ∉ binomialCI for 775/1234)
+              ─────────────────────────────────────────── EUT
+              v_B : Recidivated_{775/1234},
+                ⟨ x_model exact ⟩ ⟨ x_PPV_gap ¬[ℓ, h] in ctx ⟩
+              ─────────────────────────────────────────── I→  (discharges x_model)
+              [x_model] v_B : (Recidivated ⇒ Recidivated)_{775/1234}      ─── obs
+                                                                          u_apply : Recidivated_{925/1234}
+              ──────────────────────────────────────────────────────────────────────────────────────────── E→
+                                ([x_model] v_B · u_apply) : Recidivated_{(775·925)/1234²}
+```
+
+### subB — Northpointe PPV defence
+
+```text
+─── obs                          ─── obs
+v_B : Recidivated_{775/1234}     v_W : Recidivated_{272/460}
+──────────────────────────────────────────────────────────── IT2
+              Trust(equal-PPV : 0 ∈ [0.0 %, 8.9 %])
+              ─────────────────────────────────────── ET
+                v_B : Recidivated_{775/1234},
+                ⟨ x_PPV : [0.0 %, 8.9 %] in ctx ⟩
+```
+
+### subC — joint independence audit
+
+```text
+─── obs                          ─── obs
+u_audit : Flagged_{1/2}          u_audit : Recidivated_{3/10}
+─────────────────────────────────────────────────────────── I×  (witness asserted)
+            (u_audit, u_audit) : (Flagged × Recidivated)_{3/20}            ─── obs
+                                                                           u_audit : Recidivated_{3/10}
+            ─────────────────────────────────────────────────────────────────────────────────────── E×L
+                                                u_audit : Flagged_{1/2}
+```
+
+### subD — calibration packaged as a typed conditional
+
+```text
+─── obs  ⟨ with x_flag : Flagged_{716/1694} exact in ctx ⟩
+u_calib : Recidivated_{1047/1694}
+──────────────────────────────────────────────────── I→  (discharges x_flag)
+[x_flag] u_calib : (Flagged ⇒ Recidivated)_{1047/1694}     ─── obs
+                                                           v_flag : Flagged_{716/1694}
+──────────────────────────────────────────────────────────────────────────────────────── E→
+                ([x_flag] u_calib · v_flag) : Recidivated_{(1047·716)/1694²}
+```
+
+### subE — consolidating two prior audits
+
+```text
+─── obs ⟨ with x_FPR :Flagged_{[40 %, 45 %]} (Audit 2014) and x_FPR :Flagged_{[42 %, 50 %]} (Audit 2016) in ctx ⟩
+u_post : Flagged_{0.43}
+──────────────────────────────────────────── Contraction  (collapse intervals → x_FPR : Flagged_{0.43})
+u_post : Flagged_{0.43}
+```
+
+### Top-level — `WeakeningS` chain bundling the six sub-trees
+
+The five `WeakeningS` applications form a left-leaning chain that
+bundles each sub-certificate, in order, into the running audit
+document. Reading top-down (premises on top, document at the bottom):
+
+```text
+{subA conclusion}           {subA' conclusion}
+                                 │
+─────────────────────────────────┴───────────────── WeakeningS  (witness asserted)
+                ws₀                                                       {subB conclusion}
+                                                                                 │
+                ─────────────────────────────────────────────────────────────────┴────────── WeakeningS
+                                          ws₁                                                                {subC conclusion}
+                                                                                                                  │
+                                          ───────────────────────────────────────────────────────────────────────┴──────────── WeakeningS
+                                                                ws₂                                                                              {subD conclusion}
+                                                                ─────────────────────────────────────────────────────────────────────────────────────────────── WeakeningS
+                                                                                       ws₃                                                                                          {subE conclusion}
+                                                                                       ──────────────────────────────────────────────────────────────────────────────────────────── WeakeningS
+                                                                                                                                              audit document  (root, with subA's claim)
+```
+
+The audit document at the root retains the deepest sub-tree's claim
+(subA's FPR-disparity verdict) and merges every premise context. Each
+WeakeningS commitment carries an explicit *independence witness* —
+the auditor's assertion, on the record, that the two combined
+sub-certificates rest on independent provenance.
 
 ## 4. ProPublica narrative → derivation node mapping
 
