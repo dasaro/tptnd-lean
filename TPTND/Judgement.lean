@@ -166,4 +166,14 @@ def Derivation.ruleName : Derivation → RuleName
 def Derivation.hasIndependenceWitness : Derivation → Bool
   | .node _ _ _ w => w
 
+/-- Tree depth: leaves count 1; internal nodes are 1 + max child depth. -/
+def Derivation.depth : Derivation → Nat
+  | .node _ ps _ _ =>
+    1 + (ps.map Derivation.depth).foldl Nat.max 0
+
+/-- Total number of nodes in the derivation tree. -/
+def Derivation.nodeCount : Derivation → Nat
+  | .node _ ps _ _ =>
+    1 + (ps.map Derivation.nodeCount).foldl (· + ·) 0
+
 end TPTND

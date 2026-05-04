@@ -21,3 +21,6 @@ lean_exe compas_from_data where
 
 lean_exe hmda_showcase where
   root := `TPTND.HMDAShowcase
+
+lean_exe pp_diverse where
+  root := `TPTND.PPDiverse
