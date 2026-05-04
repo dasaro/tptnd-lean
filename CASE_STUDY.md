@@ -56,7 +56,46 @@ once*, and they are, on this data — TPTND-Lean checks each criterion
 separately and produces a structured certificate that reports both
 verdicts.
 
-## 2. What the certificate is actually checking
+## 2. Why having a checkable certificate matters
+
+A fairness audit usually lands as a press release, a methodology PDF, and
+a spreadsheet — three artefacts the reader has to manually cross-check
+before believing any of them. A *checkable certificate* collapses these
+into one machine-verifiable document, with several practical
+consequences:
+
+* **Cross-checking is automatic.** Anyone with the kernel binary can
+  re-run `pp_diverse` and get the same verdict, without trusting the
+  auditor's spreadsheet arithmetic.
+
+* **Disagreements become precise.** If you disagree with the audit, you
+  must point to a specific node — a raw count at a leaf, a CI
+  procedure, an independence claim — and explain why the kernel's side
+  condition was the wrong gate. That's a much narrower argument than
+  "I don't believe your numbers".
+
+* **Adversarial moves are blocked structurally.** An attacker cannot
+  smuggle in sample-size inflation, double-counting via overlapping
+  provenance, wrong chain-rule arithmetic, or fabricated interval
+  intersections. Each is the side condition of some rule, and the
+  kernel refuses any tree that violates one.
+
+* **Audits compose.** The trust-interval entries that `EUT` and `ET`
+  write into the typing context are designed to be picked up by future
+  certificates. A follow-up audit can re-use today's verdict by
+  composing rather than redoing the math from scratch.
+
+* **Provenance is on the record.** Every leaf cites a cohort by name;
+  every `Update` commits to disjoint provenances; every `WeakeningS`
+  carries an explicit independence witness. The certificate is an
+  *immutable structural record* of which datasets and which assumptions
+  the verdict depends on.
+
+In short: a TPTND certificate turns a fairness audit from a *narrative*
+into an *artefact* — one that any third party can independently
+verify, dissect, attack, or compose with.
+
+## 3. What the certificate is actually checking
 
 In one sentence per sub-derivation:
 
@@ -75,7 +114,7 @@ claim — the disparity verdict — but the document also carries the other
 sub-trees' conclusions, and any future audit can pick up where this one
 left off by composing with one of the trust-interval entries.
 
-## 3. ASCII derivation trees
+## 4. ASCII derivation trees
 
 These are drawn in standard natural-deduction style — **premises on top,
 conclusion below the rule's horizontal bar**. The rule name labels the
@@ -191,7 +230,7 @@ WeakeningS commitment carries an explicit *independence witness* —
 the auditor's assertion, on the record, that the two combined
 sub-certificates rest on independent provenance.
 
-## 4. ProPublica narrative → derivation node mapping
+## 5. ProPublica narrative → derivation node mapping
 
 This is the core of the case study: each sentence the audit makes
 in plain English maps to one rule application, and the kernel check on
@@ -379,7 +418,7 @@ document also carries Northpointe's PPV-equality certificate, the
 calibration certificates, the joint-attribute claim, and the
 consolidated prior — all in one bundle, all kernel-checked.
 
-## 5. The fairness landscape, in plain English
+## 6. The fairness landscape, in plain English
 
 There is no single "fair" — there are several orthogonal definitions
 that data scientists disagree about. This certificate puts three of them
@@ -404,7 +443,7 @@ the side conditions of the calculus standing in for the auditor's
 informal "I checked the arithmetic". Each verdict's certificate can
 be inspected, composed, or attacked independently.
 
-## 6. What the kernel is NOT checking
+## 7. What the kernel is NOT checking
 
 A few things it would be honest to flag:
 
@@ -430,7 +469,7 @@ These boundaries are honest gaps; each could be closed by a separate
 auditor module. The kernel's job is to ensure that, *given* the leaves
 and *given* the procedure, every inferential move is sound.
 
-## 7. Reproducing the verdict
+## 8. Reproducing the verdict
 
 ```sh
 lake build pp_diverse
