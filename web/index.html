@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TPTND-Lean certificate checker</title>
+<style>
+  :root {
+    --bg: #fafaf8; --panel: #ffffff; --ink: #1e2228; --muted: #6b7280;
+    --line: #e3e4e0; --accent: #14532d; --accent-soft: #ecf5ee;
+    --ok: #15803d; --ok-bg: #ecfdf3; --bad: #b91c1c; --bad-bg: #fef2f2;
+    --rule: #1d4ed8; --rule-bg: #eff6ff; --sel: #f59e0b; --sel-bg: #fffbeb;
+    --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  header {
+    padding: 1.1rem 1.6rem; border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  header h1 { margin: 0; font-size: 1.15rem; font-weight: 650; }
+  header p  { margin: .2rem 0 0; color: var(--muted); font-size: .9rem; }
+  main {
+    display: grid; grid-template-columns: 290px 1fr; gap: 1.2rem;
+    padding: 1.2rem 1.6rem; max-width: 1500px; margin: 0 auto;
+  }
+  @media (max-width: 950px) { main { grid-template-columns: 1fr; } }
+
+  nav h2, section h2, .inspector h2 {
+    font-size: .78rem; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 .5rem; font-weight: 600;
+  }
+  .ex-btn {
+    display: block; width: 100%; text-align: left; margin: 0 0 .4rem;
+    padding: .5rem .65rem; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--panel); cursor: pointer; font: inherit; font-size: .85rem;
+  }
+  .ex-btn:hover { border-color: var(--accent); }
+  .ex-btn.active { border-color: var(--accent); background: var(--accent-soft); }
+  .ex-btn .tag { font-size: .7rem; color: var(--muted); display: block; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 1rem 1.1rem; margin-bottom: 1.2rem;
+  }
+  input[type=text], textarea, select {
+    font: inherit; border: 1px solid var(--line); border-radius: 8px;
+    padding: .45rem .6rem; background: #fcfcfb; color: var(--ink); width: 100%;
+  }
+  #certName { font-weight: 650; margin-bottom: .5rem; }
+  #certDesc { font-size: .88rem; min-height: 64px; resize: vertical; }
+
+  .verdict {
+    padding: .6rem .9rem; border-radius: 8px; font-weight: 600;
+    margin: .8rem 0; display: none;
+  }
+  .verdict.ok  { display: block; color: var(--ok);  background: var(--ok-bg);  }
+  .verdict.bad { display: block; color: var(--bad); background: var(--bad-bg); }
+  .verdict small { font-weight: 400; display: block; margin-top: .15rem; }
+
+  /* tree */
+  .node { margin: .28rem 0; }
+  .node .head {
+    display: inline-flex; gap: .55rem; align-items: baseline; flex-wrap: wrap;
+    padding: .15rem .4rem; border-radius: 6px; cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .node .head:hover { background: var(--sel-bg); }
+  .node .head.selected { background: var(--sel-bg); border-color: var(--sel); }
+  .rule-badge {
+    font-family: var(--mono); font-size: .74rem; font-weight: 700;
+    color: var(--rule); background: var(--rule-bg);
+    padding: .1rem .45rem; border-radius: 6px; white-space: nowrap;
+  }
+  .sequent { font-family: var(--mono); font-size: .84rem; }
+  .kids { margin-left: .9rem; padding-left: .9rem; border-left: 2px solid var(--line); }
+  .approx { color: var(--muted); }
+
+  /* inspector */
+  .inspector {
+    border: 1px solid var(--sel); background: var(--sel-bg);
+    border-radius: 10px; padding: .9rem 1rem; margin: .8rem 0; display: none;
+  }
+  .inspector.open { display: block; }
+  .inspector .row { display: flex; gap: .6rem; margin: .5rem 0; align-items: center; flex-wrap: wrap; }
+  .inspector label { font-size: .82rem; color: var(--muted); }
+  .inspector select { width: auto; }
+  .inspector textarea { font-family: var(--mono); font-size: .78rem; min-height: 130px; }
+  .btnrow { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
+  button.primary {
+    font: inherit; font-weight: 600; color: #fff; background: var(--accent);
+    border: 0; border-radius: 8px; padding: .45rem .9rem; cursor: pointer;
+  }
+  button.ghost {
+    font: inherit; color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: .45rem .7rem;
+    cursor: pointer; font-size: .85rem;
+  }
+  button.danger { border-color: var(--bad); color: var(--bad); }
+  textarea#editor {
+    width: 100%; min-height: 220px; font-family: var(--mono); font-size: .78rem;
+    resize: vertical;
+  }
+  footer {
+    color: var(--muted); font-size: .8rem; padding: 0 1.6rem 1.6rem;
+    max-width: 1500px; margin: 0 auto;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>TPTND-Lean certificate checker</h1>
+  <p>Machine-checked fairness certificates. Click any node to edit it; every
+     verdict comes from the Lean checker (<code>checkDerivation</code>) —
+     the browser only renders.</p>
+</header>
+
+<main>
+  <nav>
+    <h2>Example certificates</h2>
+    <div id="examples"></div>
+    <div class="btnrow" style="margin-top:.6rem">
+      <button class="ghost" id="newBtn">＋ New blank certificate</button>
+    </div>
+  </nav>
+
+  <div>
+    <section class="panel">
+      <h2>Certificate</h2>
+      <input type="text" id="certName" placeholder="Certificate name">
+      <textarea id="certDesc" placeholder="Description — what does this certificate establish, and why does it matter?"></textarea>
+      <div id="verdict" class="verdict"></div>
+      <div id="tree"></div>
+
+      <div class="inspector" id="inspector">
+        <h2>Edit node</h2>
+        <div class="row">
+          <label>Rule</label>
+          <select id="nodeRule"></select>
+          <label><input type="checkbox" id="nodeWitness"> independence witness (#w)</label>
+        </div>
+        <div class="row" style="display:block">
+          <label>Conclusion — context &amp; claim (JSON for this node only)</label>
+          <textarea id="nodeJson" spellcheck="false"></textarea>
+        </div>
+        <div class="btnrow">
+          <button class="primary" id="applyNode">Apply &amp; re-check</button>
+          <button class="ghost" id="addObs">＋ premise: obs leaf</button>
+          <button class="ghost" id="addIdentity">＋ premise: identity leaf</button>
+          <button class="ghost danger" id="deleteNode">Delete this node</button>
+          <button class="ghost" id="closeInspector">Close</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Full JSON — edit and re-check</h2>
+      <textarea id="editor" spellcheck="false"></textarea>
+      <div class="btnrow">
+        <button class="primary" id="checkBtn">Check certificate</button>
+        <span id="hint" style="color:var(--muted);font-size:.85rem;align-self:center"></span>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer>
+  Try it: change a frequency, an interval, a provenance set, or a premise order
+  — the checker recomputes every side condition and rejects what it cannot
+  reproduce. Probabilities are exact rationals ("641/1514"). Schema:
+  <code>TPTND/JsonCodec.lean</code>.
+</footer>
+
+<script>
+"use strict";
+
+/* ════════════════ pretty-printers (display only) ════════════════ */
+
+function rat(s) {
+  const [a, b] = String(s).split("/");
+  const num = Number(a), den = Number(b ?? 1);
+  const txt = den === 1 ? a : `${a}/${b}`;
+  const v = num / den;
+  const approx = (den !== 1 && isFinite(v)) ? `≈${v.toFixed(4)}` : "";
+  return { txt, approx };
+}
+function fmtProb(s) {
+  const { txt, approx } = rat(s);
+  return approx ? `${txt}<span class="approx"> ${approx}</span>` : txt;
+}
+function fmtProbShort(s) {
+  const [a, b] = String(s).split("/");
+  const v = Number(a) / Number(b ?? 1);
+  return isFinite(v) ? v.toFixed(4).replace(/0+$/, "").replace(/\.$/, "") : s;
+}
+function fmtOutput(o) {
+  switch (o.type) {
+    case "atom": return o.name;
+    case "neg":  return `¬${fmtOutput(o.arg)}`;
+    case "sum":  return `(${fmtOutput(o.left)}+${fmtOutput(o.right)})`;
+    case "prod": return `(${fmtOutput(o.left)}×${fmtOutput(o.right)})`;
+    case "arr":  return `(${fmtOutput(o.left)}⇒<sub>${fmtProbShort(o.ann)}</sub>${fmtOutput(o.right)})`;
+    default: return "?";
+  }
+}
+function fmtTerm(t) {
+  switch (t.type) {
+    case "atom": return t.name;
+    case "pair": return `⟨${fmtTerm(t.left)},${fmtTerm(t.right)}⟩`;
+    case "fst":  return `fst(${fmtTerm(t.arg)})`;
+    case "snd":  return `snd(${fmtTerm(t.arg)})`;
+    case "lam":  return `[${t.var}]${fmtTerm(t.body)}`;
+    case "app":  return `(${fmtTerm(t.fn)}·${fmtTerm(t.arg)})`;
+    default: return "?";
+  }
+}
+function fmtConstraint(c) {
+  switch (c.type) {
+    case "exact":    return fmtProb(c.p);
+    case "interval": return `[${fmtProbShort(c.lo)}, ${fmtProbShort(c.hi)}]`;
+    case "outside":  return `¬[${fmtProbShort(c.lo)}, ${fmtProbShort(c.hi)}]`;
+    case "unknown":  return "[0,1]";
+    default: return "?";
+  }
+}
+function fmtEntry(e) {
+  return `${e.name} : ${fmtOutput(e.output)}<sub>${fmtConstraint(e.constraint)}</sub>`;
+}
+function fmtCtx(ctx) { return ctx.length ? `{${ctx.map(fmtEntry).join(", ")}}` : "∅"; }
+function fmtProv(p)  { return p.length ? `{${p.join("⊎")}}` : "∅"; }
+function fmtTermClaim(tc) {
+  const mode = tc.mode === "expected" ? "exp" : "freq";
+  return `${fmtTerm(tc.term)}<sub>${tc.samples}</sub> : ` +
+         `${fmtOutput(tc.output)}<sub>${fmtProb(tc.value)}</sub> ` +
+         `<span class="approx">[${mode}, σ=${fmtProv(tc.prov)}]</span>`;
+}
+function fmtClaim(cl) {
+  switch (cl.type) {
+    case "outputDecl": return `⊢ ${fmtOutput(cl.output)} :: output`;
+    case "distDecl":   return `⊢ ${fmtCtx(cl.context)}`;
+    case "identity":   return `⊢ ${fmtEntry(cl.entry)}`;
+    case "term":       return `⊢ ${fmtTermClaim(cl.claim)}`;
+    case "trust": {
+      const t = cl.claim;
+      const head = t.type === "trust" ? "Trust" : "UTrust";
+      const sub = t.kind === "twoSample" ? "𝒬" : "𝒫";
+      return `⊢ <b>${head}</b><sub>${sub}</sub>(${fmtTerm(t.term)}` +
+             `<sub>${t.samples}</sub> : ${fmtOutput(t.output)}` +
+             `<sub>${fmtProb(t.observed)}</sub>; ${fmtProb(t.model)}, ` +
+             `${fmtConstraint(t.interval)})`;
+    }
+    case "comparison": {
+      const c = cl.claim;
+      const head = c.type === "excess" ? "Excess" : "NoExcess";
+      return `⊢ <b>${head}</b><sub>𝒬</sub>(${fmtTermClaim(c.left)} ≻ ` +
+             `${fmtTermClaim(c.right)}; ${fmtProb(c.diff)}, ` +
+             `${fmtConstraint(c.interval)})`;
+    }
+    case "priorFamily":
+      return `⊢ Π(${cl.pairs.map(p => `(${rat(p.a).txt},${rat(p.b).txt})`).join(", ")})`;
+    default: return "?";
+  }
+}
+
+/* ════════════════ state ════════════════ */
+
+const RULES = ["output_atom","output_neg","output_sum","output_prod","output_arr",
+  "base","extend","unknown","identity","identity_star","obs","experiment",
+  "expectation","sampling","update","I+","E+L","E+R","I×","E×L","E×R","I→","E→",
+  "I-P","E-P","IT","IUT","IT2","IUT2","ET","EUT","ETex","IEx","INEx","EEx","ENEx",
+  "WeakeningD","WeakeningS","Contraction"];
+
+let EXAMPLES = [];
+let state = { name: "", description: "", certificate: null };
+let selectedPath = null;    // array of premise indices from the root
+
+function getNode(path) {
+  let n = state.certificate;
+  for (const i of path) n = n.premises[i];
+  return n;
+}
+function getParent(path) {
+  return path.length ? getNode(path.slice(0, -1)) : null;
+}
+
+/* templates for new premises */
+const OBS_TEMPLATE = () => ({
+  rule: "obs", premises: [], independenceWitness: false,
+  context: [{ name: "t", support: ["S"],
+              output: { type: "atom", name: "A" },
+              constraint: { type: "unknown" } }],
+  claim: { type: "term", claim: {
+    mode: "frequency", term: { type: "atom", name: "t" }, samples: 10,
+    output: { type: "atom", name: "A" }, value: "1/2", prov: ["σ"] } }
+});
+const ID_TEMPLATE = () => ({
+  rule: "identity", premises: [], independenceWitness: false,
+  context: [{ name: "x", support: ["S"],
+              output: { type: "atom", name: "A" },
+              constraint: { type: "exact", p: "1/2" } }],
+  claim: { type: "identity", entry: {
+    name: "x", support: ["S"], output: { type: "atom", name: "A" },
+    constraint: { type: "exact", p: "1/2" } } }
+});
+
+/* ════════════════ rendering ════════════════ */
+
+function renderNode(d, path) {
+  const div = document.createElement("div");
+  div.className = "node";
+  const head = document.createElement("div");
+  head.className = "head" +
+    (selectedPath && path.join() === selectedPath.join() ? " selected" : "");
+  head.innerHTML =
+    `<span class="rule-badge">${d.rule}</span>` +
+    `<span class="sequent">${fmtCtx(d.context)} ${fmtClaim(d.claim)}</span>`;
+  head.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    selectNode(path);
+  });
+  div.appendChild(head);
+  if (d.premises && d.premises.length) {
+    const kids = document.createElement("div");
+    kids.className = "kids";
+    d.premises.forEach((p, i) => kids.appendChild(renderNode(p, [...path, i])));
+    div.appendChild(kids);
+  }
+  return div;
+}
+
+function renderTree() {
+  const box = document.getElementById("tree");
+  box.innerHTML = "";
+  if (!state.certificate) return;
+  try { box.appendChild(renderNode(state.certificate, [])); }
+  catch (e) { box.textContent = "cannot render: " + e.message; }
+}
+
+function syncEditor() {
+  document.getElementById("editor").value = JSON.stringify(
+    { name: state.name, description: state.description,
+      certificate: state.certificate }, null, 1);
+}
+function syncMeta() {
+  document.getElementById("certName").value = state.name;
+  document.getElementById("certDesc").value = state.description;
+}
+
+/* ════════════════ node inspector ════════════════ */
+
+function selectNode(path) {
+  selectedPath = path;
+  renderTree();
+  const insp = document.getElementById("inspector");
+  insp.classList.add("open");
+  const n = getNode(path);
+  document.getElementById("nodeRule").value = n.rule;
+  document.getElementById("nodeWitness").checked = !!n.independenceWitness;
+  document.getElementById("nodeJson").value =
+    JSON.stringify({ context: n.context, claim: n.claim }, null, 1);
+}
+function closeInspector() {
+  selectedPath = null;
+  document.getElementById("inspector").classList.remove("open");
+  renderTree();
+}
+
+function applyNode() {
+  if (!selectedPath) return;
+  const n = getNode(selectedPath);
+  n.rule = document.getElementById("nodeRule").value;
+  n.independenceWitness = document.getElementById("nodeWitness").checked;
+  try {
+    const local = JSON.parse(document.getElementById("nodeJson").value);
+    if (local.context !== undefined) n.context = local.context;
+    if (local.claim !== undefined) n.claim = local.claim;
+  } catch (e) {
+    showVerdict(false, "node JSON is invalid: " + e.message);
+    return;
+  }
+  renderTree(); syncEditor(); check();
+}
+
+function addPremise(template) {
+  if (!selectedPath) return;
+  const n = getNode(selectedPath);
+  n.premises = n.premises || [];
+  n.premises.push(template());
+  renderTree(); syncEditor(); check();
+}
+
+function deleteNode() {
+  if (!selectedPath) return;
+  if (selectedPath.length === 0) {
+    showVerdict(false, "cannot delete the root — use “New blank certificate” instead");
+    return;
+  }
+  const parent = getParent(selectedPath);
+  parent.premises.splice(selectedPath[selectedPath.length - 1], 1);
+  closeInspector(); syncEditor(); check();
+}
+
+/* ════════════════ checking ════════════════ */
+
+function showVerdict(ok, msg) {
+  const v = document.getElementById("verdict");
+  v.className = "verdict " + (ok ? "ok" : "bad");
+  v.innerHTML = ok
+    ? "✓ VALID — accepted by <code>checkDerivation</code>"
+    : `✗ REJECTED by <code>checkDerivation</code><small>${msg ?? ""}</small>`;
+}
+
+async function check() {
+  if (!state.certificate) return;
+  try {
+    const r = await fetch("/check", {
+      method: "POST", body: JSON.stringify(state.certificate) });
+    const res = await r.json();
+    showVerdict(res.ok, res.error);
+  } catch (e) {
+    showVerdict(false,
+      "cannot reach the checker — run <code>python3 web/serve.py</code> " +
+      "and open <code>http://127.0.0.1:8787</code>");
+  }
+}
+
+/* the big textarea: accepts {name, description, certificate} or a bare tree */
+function loadFromEditor() {
+  let obj;
+  try { obj = JSON.parse(document.getElementById("editor").value); }
+  catch (e) { showVerdict(false, "not valid JSON: " + e.message); return false; }
+  if (obj && obj.certificate) {
+    state = { name: obj.name ?? "", description: obj.description ?? "",
+              certificate: obj.certificate };
+  } else {
+    state = { name: state.name, description: state.description, certificate: obj };
+  }
+  syncMeta(); renderTree();
+  return true;
+}
+
+/* ════════════════ examples & init ════════════════ */
+
+function selectExample(i, btn) {
+  document.querySelectorAll(".ex-btn").forEach(b => b.classList.remove("active"));
+  if (btn) btn.classList.add("active");
+  const ex = EXAMPLES[i];
+  state = { name: ex.name, description: ex.description,
+            certificate: JSON.parse(JSON.stringify(ex.certificate)) };
+  closeInspector(); syncMeta(); syncEditor(); renderTree(); check();
+}
+
+async function init() {
+  const ruleSel = document.getElementById("nodeRule");
+  for (const r of RULES) {
+    const o = document.createElement("option");
+    o.value = o.textContent = r;
+    ruleSel.appendChild(o);
+  }
+  document.getElementById("checkBtn").addEventListener("click", () => {
+    if (loadFromEditor()) check();
+  });
+  document.getElementById("applyNode").addEventListener("click", applyNode);
+  document.getElementById("addObs").addEventListener("click", () => addPremise(OBS_TEMPLATE));
+  document.getElementById("addIdentity").addEventListener("click", () => addPremise(ID_TEMPLATE));
+  document.getElementById("deleteNode").addEventListener("click", deleteNode);
+  document.getElementById("closeInspector").addEventListener("click", closeInspector);
+  document.getElementById("certName").addEventListener("input", (e) => {
+    state.name = e.target.value; syncEditor();
+  });
+  document.getElementById("certDesc").addEventListener("input", (e) => {
+    state.description = e.target.value; syncEditor();
+  });
+  document.getElementById("newBtn").addEventListener("click", () => {
+    document.querySelectorAll(".ex-btn").forEach(b => b.classList.remove("active"));
+    state = { name: "My certificate",
+              description: "Describe what this certificate establishes.",
+              certificate: OBS_TEMPLATE() };
+    closeInspector(); syncMeta(); syncEditor(); renderTree(); check();
+  });
+
+  try {
+    EXAMPLES = await (await fetch("examples.json")).json();
+  } catch (e) {
+    document.getElementById("examples").textContent =
+      "examples.json not found — run `lake exe leaf_examples` from the repo root.";
+    return;
+  }
+  const nav = document.getElementById("examples");
+  EXAMPLES.forEach((ex, i) => {
+    const b = document.createElement("button");
+    b.className = "ex-btn";
+    b.innerHTML = `${ex.name}<span class="tag">${ex.expectValid ? "valid" : "should be rejected"}</span>`;
+    b.addEventListener("click", () => selectExample(i, b));
+    nav.appendChild(b);
+  });
+  nav.querySelector(".ex-btn").click();
+}
+
+init();
+</script>
+</body>
+</html>

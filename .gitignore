@@ -1,0 +1,32 @@
+# ── Build artifacts ────────────────────────────────────────────────
+/.lake/
+*.olean
+*.ilean
+
+# ── OS / editor ────────────────────────────────────────────────────
+.DS_Store
+*.swp
+
+# ── Private material — never published ─────────────────────────────
+# Only the Lean implementation and a minimal README belong online.
+# Papers, slides, presentations, plans, design notes and any other
+# prose are kept locally and excluded here.
+*.md
+!README.md
+*.tex
+*.pdf
+*.aux
+*.log
+*.out
+*.nav
+*.snm
+*.toc
+*.vrb
+*.bbl
+*.blg
+*.synctex.gz
+*.pptx
+*.key
+*.docx
+paper/
+slides/
