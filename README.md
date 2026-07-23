@@ -14,9 +14,11 @@ derivation trees. Alongside it the development provides:
   almost-sure convergence of observed frequencies, semantic soundness of
   the expected fragment, and Chebyshev coverage guarantees — one- and
   two-sample — for the very intervals the checker computes;
-- an **operational bridge**: real run histories map to batch certificates
-  the checker provably accepts, with provenance assigned positionally and
-  the certified frequency equal to the run space's observed frequency;
+- an **operational bridge**: real run histories map to certificates the
+  checker provably accepts, with provenance assigned positionally and the
+  certified frequency equal to the run space's observed frequency — up to
+  general trace adequacy: every claim of an arbitrary labelled reduction
+  sequence certifies, however the steps nest;
 - an **adversarial regression suite** of rejected attack certificates;
 - worked **case studies** on the COMPAS and HMDA datasets.
 
