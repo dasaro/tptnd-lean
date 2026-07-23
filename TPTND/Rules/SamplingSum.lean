@@ -1,4 +1,5 @@
 import TPTND.CheckM
+import TPTND.Spec
 import TPTND.WellFormedness
 import TPTND.Arithmetic
 import Mathlib.Data.Finset.Card
@@ -21,40 +22,107 @@ private def premiseTermClaims (ps : List Derivation) (rule : String) :
 -- sampling
 -- ============================================================================
 
+/-- Variadic premise extraction, carrying the map equation (forward mode). -/
+private def premiseTermClaimsC (ps : List Derivation) (rule : String) :
+    CheckM {tcs : List TermClaim // ps.map getClaim = tcs.map .term} :=
+  match ps with
+  | [] => pure ⟨[], rfl⟩
+  | p :: rest =>
+    match htc : getClaim p with
+    | .term tc => do
+      let ⟨tcs, hrest⟩ ← premiseTermClaimsC rest rule
+      pure ⟨tc :: tcs, by rw [List.map_cons, List.map_cons, htc, hrest]⟩
+    | _ => throw s!"{rule}: expected a term claim"
+
+def checkSamplingC (d : Derivation) :
+    CheckM (PLift ((∀ p ∈ d.premises, Derivable p.conclusion)
+                   → contextWF (getCtx d) = true
+                   → Derivable d.conclusion)) := do
+  let ⟨hlen1⟩ ← ensure' (d.premises.length ≥ 1)
+    s!"sampling: expected at least 1 premise(s), got {d.premises.length}"
+  match hcc : getClaim d with
+  | .term conc => do
+    let ⟨hmode⟩ ← ensure' (conc.mode == .frequency)
+      "sampling: conclusion must be frequency mode"
+    let ⟨hctxs⟩ ← ensure' (d.premises.all (fun p => contextEqSet (getCtx p) (getCtx d)))
+      "sampling: all premises must share the conclusion's context Γ"
+    let ⟨tcs, hmap⟩ ← premiseTermClaimsC d.premises "sampling"
+    -- Premises must be single-run EXPERIMENT-form judgements (Table 3 reads
+    -- `Γ ⊢_ρi t : αi`), else n and f could be fabricated from richer claims.
+    let ⟨hexp⟩ ← ensure' (tcs.all (fun tc =>
+        tc.prov.card == 1 && tc.samples == 1 && tc.mode == .frequency))
+      "sampling: every premise must be a single-run experiment (|ρ| = 1, one sample)"
+    -- All premises must have the same term
+    let ⟨hterm⟩ ← ensure' (tcs.all (·.term == conc.term))
+      "sampling: all premises must share the same term"
+    -- Pairwise disjoint provenances
+    let provs := tcs.map (·.prov)
+    let ⟨hdisj⟩ ← ensure' (Provenance.pairwiseDisjoint provs)
+      "sampling: premise provenances must be pairwise disjoint"
+    -- Conclusion provenance = union of all premise provenances
+    let unionProv := provs.foldl (· ∪ ·) ∅
+    let ⟨hprov⟩ ← ensure' (conc.prov == unionProv)
+      "sampling: conclusion provenance must be union of premise provenances"
+    -- n = number of premises
+    let ⟨hn⟩ ← ensure' (conc.samples == d.premises.length)
+      "sampling: conclusion sample size must equal number of premises"
+    -- f = |{i | αᵢ = α}| / n
+    let ⟨hval⟩ ← ensure' (decide (conc.value.val ==
+        (((tcs.filter (·.output == conc.output)).length : ℚ)
+          / (d.premises.length : ℚ))))
+      "sampling: frequency mismatch"
+    pure ⟨fun hprem hwf => by
+      have hplen : d.premises.length = tcs.length := by
+        have := congrArg List.length hmap
+        simpa using this
+      -- positional claim equations from the map equation
+      have hclaims : ∀ pr ∈ d.premises.zip tcs, getClaim pr.1 = .term pr.2 := by
+        intro pr hpr
+        obtain ⟨i, hi, hpri⟩ := List.getElem_of_mem hpr
+        have hip : i < d.premises.length := by
+          rw [List.length_zip, hplen] at hi; omega
+        have hit : i < tcs.length := by rw [← hplen]; exact hip
+        have hz : (d.premises.zip tcs)[i]'hi = (d.premises[i], tcs[i]) :=
+          List.getElem_zip
+        rw [← hpri, hz]
+        have h1 : (d.premises.map getClaim)[i]'(by simpa using hip)
+            = (tcs.map Claim.term)[i]'(by simpa using hit) := by
+          simp only [hmap]
+        simpa using h1
+      have hprems : ∀ pr ∈ (d.premises.map getCtx).zip tcs,
+          Derivable ⟨pr.1, .term pr.2⟩ := by
+        intro pr hpr
+        rw [List.zip_map_left] at hpr
+        obtain ⟨q, hq, hqe⟩ := List.mem_map.mp hpr
+        have hqmem : q.1 ∈ d.premises := (List.of_mem_zip hq).1
+        have hD := hprem q.1 hqmem
+        rw [conclusion_eta, hclaims q hq] at hD
+        rw [← hqe]; exact hD
+      have hne : tcs ≠ [] := by
+        have : 0 < tcs.length := by
+          rw [← hplen]; exact Nat.lt_of_lt_of_le Nat.zero_lt_one
+            (of_decide_eq_true hlen1)
+        exact List.ne_nil_of_length_pos this
+      rw [beq_iff_eq] at hmode hprov hn
+      have hcv : conc.value.val
+          = (((tcs.filter (·.output == conc.output)).length : ℚ)
+              / (tcs.length : ℚ)) := by
+        have := beq_iff_eq.mp (of_decide_eq_true hval)
+        rwa [hplen] at this
+      have hctxs' : (d.premises.map getCtx).all
+          (fun Δ => contextEqSet Δ (getCtx d)) = true := by
+        simpa [List.all_map, Function.comp] using hctxs
+      have hconc_eq : conc = ⟨.frequency, conc.term, tcs.length,
+          conc.output, conc.value, (tcs.map (·.prov)).foldl (· ∪ ·) ∅⟩ :=
+        TermClaim.ext hmode rfl (by rw [hn, hplen]) rfl rfl hprov
+      rw [conclusion_eta, hcc, hconc_eq]
+      exact .sampling (getCtx d) (d.premises.map getCtx) tcs conc.term
+        conc.output conc.value hwf hne (by simp [hplen]) hprems hctxs'
+        hexp hterm hdisj hcv⟩
+  | _ => throw "sampling: expected a term claim"
+
 def checkSampling (d : Derivation) : CheckM Unit := do
-  let ps ← expectAtLeastPremises d 1 "sampling"
-  let conc ← expectTermClaim (getClaim d) "sampling"
-  ensure (conc.mode == .frequency) "sampling: conclusion must be frequency mode"
-  ensure (ps.all (fun p => contextEqSet (getCtx p) (getCtx d)))
-    "sampling: all premises must share the conclusion's context Γ"
-  let premTCs ← premiseTermClaims ps "sampling"
-  -- Premises must be single-run EXPERIMENT-form judgements (Table 3 reads
-  -- `Γ ⊢_ρi t : αi`), else n and f could be fabricated from richer claims.
-  ensure (premTCs.all (fun tc =>
-      tc.prov.card == 1 && tc.samples == 1 && tc.mode == .frequency))
-    "sampling: every premise must be a single-run experiment (|ρ| = 1, one sample)"
-  -- All premises must have the same term
-  ensure (premTCs.all (·.term == conc.term))
-    "sampling: all premises must share the same term"
-  -- Pairwise disjoint provenances
-  let provs := premTCs.map (·.prov)
-  let rec pairwiseDisjoint : List Provenance → Bool
-    | [] => true
-    | p :: rest => rest.all (Provenance.disjoint p ·) && pairwiseDisjoint rest
-  ensure (pairwiseDisjoint provs)
-    "sampling: premise provenances must be pairwise disjoint"
-  -- Conclusion provenance = union of all premise provenances
-  let unionProv := provs.foldl (· ∪ ·) ∅
-  ensure (conc.prov == unionProv)
-    "sampling: conclusion provenance must be union of premise provenances"
-  -- n = number of premises
-  ensure (conc.samples == ps.length)
-    "sampling: conclusion sample size must equal number of premises"
-  -- f = |{i | αᵢ = α}| / n
-  let matchCount := premTCs.filter (·.output == conc.output) |>.length
-  let expectedF := (matchCount : ℚ) / (ps.length : ℚ)
-  ensure (decide (conc.value.val == expectedF))
-    "sampling: frequency mismatch"
+  let _ ← checkSamplingC d
 
 -- ============================================================================
 -- update

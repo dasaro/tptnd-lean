@@ -1424,6 +1424,15 @@ theorem checkENEx_sound (d : Derivation)
   obtain ⟨w, _, _⟩ := checkM_bind_ok h
   exact w.down hps hwf
 
+theorem checkSampling_sound (d : Derivation)
+    (hwf : contextWF (getCtx d) = true)
+    (h : checkSampling d = Except.ok ())
+    (hps : ∀ p ∈ d.premises, Derivable p.conclusion) :
+    Derivable d.conclusion := by
+  unfold checkSampling at h
+  obtain ⟨w, _, _⟩ := checkM_bind_ok h
+  exact w.down hps hwf
+
 /-- The rule names covered by the faithfulness theorem. -/
 def fragmentRule (r : String) : Bool :=
   r == "identity" || r == "identity_star" || r == "obs" || r == "update" ||
@@ -1437,7 +1446,8 @@ def fragmentRule (r : String) : Bool :=
   r == "output_atom" || r == "output_sum" || r == "output_prod" ||
   r == "output_arr" || r == "base" || r == "extend" || r == "extend_det" ||
   r == "unknown" ||
-  r == "I→" || r == "E→" || r == "ETex" || r == "ENEx"
+  r == "I→" || r == "E→" || r == "ETex" || r == "ENEx" ||
+  r == "sampling"
 
 mutual
 /-- Every rule in the derivation lies in the certified fragment. -/
@@ -1468,10 +1478,10 @@ theorem checker_sound :
       premisesSound ps hfrag.2 hok
     have hr := hfrag.1
     simp only [fragmentRule, Bool.or_eq_true, beq_iff_eq] at hr
-    rcases hr with ((((((((((((((((((((((((((((((((((((hr | hr) | hr) | hr) |
+    rcases hr with (((((((((((((((((((((((((((((((((((((hr | hr) | hr) | hr) |
       hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) |
       hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) |
-      hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) <;> subst hr
+      hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) <;> subst hr
     · exact checkIdentity_sound _ hwf hnode hpsD
     · exact checkIdentityStar_sound _ hwf hnode hpsD
     · exact checkObs_sound _ hwf hnode hpsD
@@ -1509,6 +1519,7 @@ theorem checker_sound :
     · exact checkEArr_sound _ hwf hnode hpsD
     · exact checkETex_sound _ hwf hnode hpsD
     · exact checkENEx_sound _ hwf hnode hpsD
+    · exact checkSampling_sound _ hwf hnode hpsD
 
 theorem premisesSound :
     ∀ (ps : List Derivation), inFragmentList ps = true →

@@ -128,6 +128,12 @@ def Provenance.disjoint (σ τ : Provenance) : Bool :=
 
 def Provenance.union (σ τ : Provenance) : Provenance := σ ∪ τ
 
+/-- Every pair of provenances in the list is disjoint. -/
+def Provenance.pairwiseDisjoint : List Provenance → Bool
+  | [] => true
+  | p :: rest => rest.all (Provenance.disjoint p ·) &&
+      Provenance.pairwiseDisjoint rest
+
 -- ============================================================================
 -- 2.6 Context entries and contexts
 -- ============================================================================

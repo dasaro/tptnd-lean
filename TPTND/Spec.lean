@@ -455,4 +455,25 @@ inductive Derivable : Sequent → Prop where
       Derivable ⟨ctx, .term ⟨.frequency, tcL.term, tcL.samples, tcL.output,
         tcL.value, σ⟩⟩
 
+  /-- sampling (Table 3): collect n single-run experiments of one term into
+      the observed frequency of an output.  Premises must be experiment-form
+      (one sample, one provenance token each) with pairwise-disjoint runs;
+      the conclusion's provenance is their union and its value the observed
+      relative frequency. -/
+  | sampling (Γc : Context) (Δs : List Context) (tcs : List TermClaim)
+      (t : Term) (α : Output) (f : Prob)
+      (hwf : contextWF Γc = true)
+      (hne : tcs ≠ [])
+      (hlen : Δs.length = tcs.length)
+      (hprems : ∀ pr ∈ Δs.zip tcs, Derivable ⟨pr.1, .term pr.2⟩)
+      (hctxs : Δs.all (fun Δ => contextEqSet Δ Γc) = true)
+      (hexp : tcs.all (fun tc =>
+          tc.prov.card == 1 && tc.samples == 1 && tc.mode == .frequency) = true)
+      (hterm : tcs.all (·.term == t) = true)
+      (hdisj : Provenance.pairwiseDisjoint (tcs.map (·.prov)) = true)
+      (hval : f.val = (((tcs.filter (·.output == α)).length : ℚ)
+                        / (tcs.length : ℚ))) :
+      Derivable ⟨Γc, .term ⟨.frequency, t, tcs.length, α, f,
+        (tcs.map (·.prov)).foldl (· ∪ ·) ∅⟩⟩
+
 end TPTND
