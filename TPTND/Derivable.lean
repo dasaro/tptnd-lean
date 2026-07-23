@@ -2,28 +2,15 @@ import TPTND
 
 /-! # Faithfulness: `Derivable` spec and `checker_sound`
 
-`Derivable s` is the calculus written directly as a `Prop`: it holds iff
-the sequent `s` is the conclusion of a TPTND rule whose premises are
-derivable and whose side conditions hold.  The constructors transcribe
-the paper's rules (Tables 1–7) for the **certified fragment** — 24 of
-the 41 dispatched rules:
+`Derivable s` (defined in `TPTND/Spec.lean`) is the calculus written
+directly as a `Prop`: it holds iff the sequent `s` is the conclusion of a
+TPTND rule whose premises are derivable and whose side conditions hold.
+The constructors transcribe the rules of Tables 1–7; every rule the
+top-level checker dispatches is covered.
 
-  identity, identity_star, identity_model, obs, experiment,
-  expectation, update, sampling-adjacent leaves,
-  IT, IUT, IT2, IUT2, IEx, INEx, ET, EUT, EEx,
-  I+, E+L, E+R, I×, E×L, E×R, WeakeningS, WeakeningD
-
-— the entire statistical spine exercised by the COMPAS and HMDA case
-studies plus the connective and weakening rules.  The remaining rules
-(sampling, I→/E→, I-P/E-P, ETex, ENEx, Contraction,
-output/distribution declarations) are future work; the top-level
-theorem `checker_sound` is accordingly guarded by
-`Derivation.inFragment` — consult `fragmentRule` below for the
-authoritative list.
-
-The soundness (faithfulness) theorems show that whenever the checker
-accepts a node of the fragment, its conclusion is `Derivable`: the
-checker cannot accept a certificate outside the calculus.  A few
+The faithfulness theorem `checker_sound` shows that whenever
+`checkDerivation` accepts a certificate, its conclusion is `Derivable`:
+the checker cannot accept a certificate outside the calculus.  A few
 checker strengthenings beyond the printed rules (provenance pinning in
 ET/EUT, the unique-hypothesis condition on cited model entries, the
 independence-witness node flag) are deliberately not reflected in
@@ -1460,7 +1447,10 @@ theorem checkEPosterior_sound (d : Derivation)
   obtain ⟨w, _, _⟩ := checkM_bind_ok h
   exact w.down hps hwf
 
-/-- The rule names covered by the faithfulness theorem. -/
+/-- The rule names the top-level checker dispatches.  Scaffolding for the
+    inductive proof of `checker_sound`: `checkNode_fragment` shows checker
+    acceptance implies membership, so the guarded induction below yields
+    the unguarded faithfulness theorem. -/
 def fragmentRule (r : String) : Bool :=
   r == "identity" || r == "identity_star" || r == "obs" || r == "update" ||
   r == "IT" || r == "IUT" || r == "IT2" || r == "IUT2" ||
@@ -1487,11 +1477,8 @@ def inFragmentList : List Derivation → Bool
 end
 
 mutual
-/-- **Faithfulness of the checker (certified fragment).**  If every rule
-    in the tree belongs to the fragment and `checkDerivation` accepts,
-    the conclusion is derivable in the calculus: the checker cannot
-    accept a certificate outside the rules. -/
-theorem checker_sound :
+/-- Faithfulness, fragment-guarded form (the induction skeleton). -/
+theorem checker_sound_frag :
     ∀ (d : Derivation), d.inFragment = true →
       checkDerivation d = Except.ok () → Derivable d.conclusion
   | .node r ps concl w, hfrag, hok => by
@@ -1565,8 +1552,63 @@ theorem premisesSound :
     obtain ⟨_, hq, hqs⟩ := checkM_bind_ok hok
     intro p hp
     rcases List.mem_cons.mp hp with hpq | hpqs
-    · subst hpq; exact checker_sound p hfrag.1 hq
+    · subst hpq; exact checker_sound_frag p hfrag.1 hq
     · exact premisesSound qs hfrag.2 hqs p hpqs
 end
+
+
+-- ============================================================================
+-- Totality: checker acceptance stays inside the dispatched rule set
+-- ============================================================================
+
+set_option maxHeartbeats 1000000 in
+/-- Every rule name `checkNode` accepts is a dispatched rule. -/
+theorem checkNode_fragment (r : String) (ps : List Derivation)
+    (concl : Sequent) (w : Bool)
+    (h : checkNode (.node r ps concl w) = Except.ok ()) :
+    fragmentRule r = true := by
+  unfold checkNode at h
+  rw [show (Derivation.node r ps concl w).ruleName = r from rfl] at h
+  split at h
+  case h_42 x heq =>
+    exact absurd (show (Except.error (toString "unknown rule: " ++ toString r)
+      : CheckM Unit) = Except.ok () from h) (by simp)
+  all_goals first
+    | (rename_i heq; subst heq; simp [fragmentRule])
+    | simp [fragmentRule]
+
+mutual
+/-- Whatever the checker accepts lies in the dispatched rule set. -/
+theorem checkDerivation_inFragment :
+    ∀ (d : Derivation), checkDerivation d = Except.ok () →
+      d.inFragment = true
+  | .node r ps concl w, hok => by
+    unfold checkDerivation at hok
+    obtain ⟨_, _, hok⟩ := checkM_bind_ok hok
+    obtain ⟨_, hnode, hok⟩ := checkM_bind_ok hok
+    unfold Derivation.inFragment
+    rw [Bool.and_eq_true]
+    exact ⟨checkNode_fragment r ps concl w hnode,
+           checkPremisesList_inFragment ps hok⟩
+
+theorem checkPremisesList_inFragment :
+    ∀ (ps : List Derivation), checkPremisesList ps = Except.ok () →
+      inFragmentList ps = true
+  | [], _ => rfl
+  | q :: qs, hok => by
+    unfold checkPremisesList at hok
+    obtain ⟨_, hq, hqs⟩ := checkM_bind_ok hok
+    unfold inFragmentList
+    rw [Bool.and_eq_true]
+    exact ⟨checkDerivation_inFragment q hq,
+           checkPremisesList_inFragment qs hqs⟩
+end
+
+/-- **Faithfulness of the checker.**  If `checkDerivation` accepts a
+    certificate, its conclusion is derivable in the calculus: the checker
+    cannot accept a certificate outside the rules. -/
+theorem checker_sound (d : Derivation)
+    (h : checkDerivation d = Except.ok ()) : Derivable d.conclusion :=
+  checker_sound_frag d (checkDerivation_inFragment d h) h
 
 end TPTND

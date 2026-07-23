@@ -7,9 +7,9 @@ probabilistic processes.
 The checker is a small, total, `sorry`-free kernel that type-checks
 derivation trees. Alongside it the development provides:
 
-- a machine-checked **faithfulness theorem** (`checker_sound`): on the
-  certified rule fragment, checker acceptance implies derivability in the
-  calculus;
+- a machine-checked **faithfulness theorem** (`checker_sound`): checker
+  acceptance implies derivability in the calculus, across every dispatched
+  rule;
 - a **measure-theoretic semantics** — a run space of repeated sampling,
   almost-sure convergence of observed frequencies, and a Chebyshev
   coverage guarantee for trust certificates;
