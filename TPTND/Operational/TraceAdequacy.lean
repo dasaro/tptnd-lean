@@ -577,4 +577,354 @@ theorem CertTrace.derivable {Γ : Context}
   have := checker_sound d hacc
   rwa [hconc] at this
 
+-- ============================================================================
+-- Value-aware subject reduction: recorded frequencies are observed counts
+-- ============================================================================
+
+/-! `CertTrace` certifies claims; nothing yet says the claims are TRUE of
+the underlying draws.  A **history** assigns each draw token the atom it
+produced (`out : String → String`); a `ValidTrace` is a labelled trace
+consistent with a history — event steps record the assigned atom, and
+`sampling` collects genuine draws (atomic output, frequency 1).  The
+value-aware invariant `ValidCell` then says of every cell: its sample
+count is the number of draws it cites, and its frequency times that
+count is exactly the number of cited draws whose outcome lies among its
+output's atoms.  `ValidTrace.valid` proves the invariant for every cell
+of every valid trace — the connective cases turn on syntactic
+disjointness, which is precisely what makes hit counts add and
+subtract. -/
+
+/-- Draws in `σ` whose outcome lies among `α`'s atoms. -/
+def hitCount (out : String → String) (σ : Provenance) (α : Output) : ℕ :=
+  (σ.filter (fun tok => out tok ∈ α.atoms)).card
+
+/-- The cell's frequency is the observed hit rate of the draws it cites. -/
+def ValidCell (out : String → String) (c : RunClaim × Provenance) : Prop :=
+  c.1.samples = c.2.card ∧
+  c.1.freq.val * (c.1.samples : ℚ) = (hitCount out c.2 c.1.output : ℚ)
+
+theorem hitCount_union_of_disjoint (out : String → String)
+    {σ τ : Provenance} (h : Provenance.disjoint σ τ = true) (α : Output) :
+    hitCount out (σ ∪ τ) α = hitCount out σ α + hitCount out τ α := by
+  simp only [Provenance.disjoint, decide_eq_true_eq] at h
+  unfold hitCount
+  rw [Finset.filter_union]
+  refine Finset.card_union_of_disjoint ?_
+  rw [Finset.disjoint_left]
+  intro tok h1 h2
+  have hmem : tok ∈ σ ∩ τ := Finset.mem_inter.mpr
+    ⟨Finset.mem_of_mem_filter tok h1, Finset.mem_of_mem_filter tok h2⟩
+  rw [h] at hmem
+  exact Finset.notMem_empty tok hmem
+
+theorem hitCount_sum_split (out : String → String) (σ : Provenance)
+    {α β : Output} (h : α.atoms ∩ β.atoms = ∅) :
+    hitCount out σ (.sum α β) = hitCount out σ α + hitCount out σ β := by
+  unfold hitCount
+  have hset : σ.filter (fun tok => out tok ∈ (Output.sum α β).atoms)
+      = σ.filter (fun tok => out tok ∈ α.atoms)
+        ∪ σ.filter (fun tok => out tok ∈ β.atoms) := by
+    ext tok
+    simp only [Finset.mem_filter, Finset.mem_union,
+               show (Output.sum α β).atoms = α.atoms ∪ β.atoms from rfl]
+    tauto
+  rw [hset]
+  refine Finset.card_union_of_disjoint ?_
+  rw [Finset.disjoint_left]
+  intro tok h1 h2
+  have h1' := (Finset.mem_filter.mp h1).2
+  have h2' := (Finset.mem_filter.mp h2).2
+  have : out tok ∈ α.atoms ∩ β.atoms := Finset.mem_inter.mpr ⟨h1', h2'⟩
+  rw [h] at this
+  exact Finset.notMem_empty _ this
+
+theorem foldl_union_acc (l : List Provenance) (acc : Provenance) :
+    l.foldl (· ∪ ·) acc = acc ∪ l.foldl (· ∪ ·) ∅ := by
+  induction l generalizing acc with
+  | nil => simp
+  | cons σ rest ih =>
+      rw [List.foldl_cons, List.foldl_cons, ih, ih (∅ ∪ σ)]
+      ext tok
+      simp [Finset.mem_union]
+
+theorem disjoint_foldl_union {σ : Provenance} {l : List Provenance}
+    (h : ∀ τ ∈ l, Provenance.disjoint σ τ = true) :
+    Provenance.disjoint σ (l.foldl (· ∪ ·) ∅) = true := by
+  simp only [Provenance.disjoint, decide_eq_true_eq] at h ⊢
+  rw [Finset.eq_empty_iff_forall_notMem]
+  intro tok hmem
+  rw [Finset.mem_inter] at hmem
+  rw [mem_foldl_union] at hmem
+  rcases hmem.2 with hc | ⟨τ, hτ, htok⟩
+  · exact Finset.notMem_empty tok hc
+  · have : tok ∈ σ ∩ τ := Finset.mem_inter.mpr ⟨hmem.1, htok⟩
+    rw [h τ hτ] at this
+    exact Finset.notMem_empty tok this
+
+theorem hitCount_foldl_union (out : String → String) (α : Output) :
+    ∀ (l : List Provenance),
+      Provenance.pairwiseDisjoint l = true →
+      hitCount out (l.foldl (· ∪ ·) ∅) α
+        = (l.map (fun σ => hitCount out σ α)).sum
+  | [], _ => by simp [hitCount]
+  | σ :: rest, hdisj => by
+      simp only [Provenance.pairwiseDisjoint, Bool.and_eq_true,
+                 List.all_eq_true] at hdisj
+      have ih := hitCount_foldl_union out α rest hdisj.2
+      rw [List.foldl_cons, foldl_union_acc]
+      have hd : Provenance.disjoint (∅ ∪ σ) (rest.foldl (· ∪ ·) ∅) = true := by
+        rw [Finset.empty_union]
+        exact disjoint_foldl_union (fun τ hτ => hdisj.1 τ hτ)
+      rw [hitCount_union_of_disjoint out hd, Finset.empty_union] at *
+      rw [List.map_cons, List.sum_cons, ih]
+
+theorem card_foldl_union :
+    ∀ (l : List Provenance),
+      Provenance.pairwiseDisjoint l = true →
+      (l.foldl (· ∪ ·) ∅).card = (l.map Finset.card).sum
+  | [], _ => by simp
+  | σ :: rest, hdisj => by
+      simp only [Provenance.pairwiseDisjoint, Bool.and_eq_true,
+                 List.all_eq_true] at hdisj
+      have ih := card_foldl_union rest hdisj.2
+      rw [List.foldl_cons, foldl_union_acc, Finset.empty_union]
+      have hd := disjoint_foldl_union (fun τ hτ => hdisj.1 τ hτ)
+      simp only [Provenance.disjoint, decide_eq_true_eq] at hd
+      rw [Finset.card_union_of_disjoint
+            (Finset.disjoint_iff_inter_eq_empty.mpr hd),
+          List.map_cons, List.sum_cons, ih]
+
+/-- A **valid trace**: a labelled trace consistent with the history `out`.
+    Event steps record the drawn atom; `sampling` collects genuine draws
+    (atomic output, frequency 1).  Forgetting `out` gives a `CertTrace`. -/
+inductive ValidTrace (Γ : Context) (out : String → String) :
+    List (RunClaim × Provenance) → Prop
+  | nil : ValidTrace Γ out []
+  | event (T : List (RunClaim × Provenance)) (u a tok : String)
+      (ht : ValidTrace Γ out T)
+      (hsupp : supports Γ u (.atom a))
+      (hout : out tok = a) :
+      ValidTrace Γ out (T ++ [(⟨.atom u, 1, .atom a, Prob.one⟩, {tok})])
+  | sampling (T : List (RunClaim × Provenance)) (t : Term) (α : Output)
+      (sources : List (RunClaim × Provenance)) (f : Prob)
+      (ht : ValidTrace Γ out T)
+      (hmem : ∀ s ∈ sources, s ∈ T)
+      (hterm : ∀ s ∈ sources, s.1.term = t)
+      (hsingle : ∀ s ∈ sources, s.1.samples = 1)
+      (hprov1 : ∀ s ∈ sources, s.2.card = 1)
+      (hfreq1 : ∀ s ∈ sources, s.1.freq = Prob.one)
+      (hatomS : ∀ s ∈ sources, ∃ b, s.1.output = .atom b)
+      (hdisj : Provenance.pairwiseDisjoint (sources.map (·.2)) = true)
+      (hne : sources ≠ [])
+      (hatom : ∃ b, α = .atom b)
+      (hgr : Grounds Γ t α)
+      (hf : f.val = ((sources.filter (fun s => s.1.output == α)).length : ℚ)
+                      / ((sources.length : ℚ))) :
+      ValidTrace Γ out (T ++ [(⟨t, sources.length, α, f⟩,
+        ((sources.map (·.2)).foldl (· ∪ ·) ∅))])
+  | update (T : List (RunClaim × Provenance)) (t : Term) (α : Output)
+      (n m : ℕ) (f g h : Prob) (σf σg : Provenance)
+      (ht : ValidTrace Γ out T)
+      (hn : 0 < n) (hm : 0 < m)
+      (hfmem : (⟨t, n, α, f⟩, σf) ∈ T)
+      (hgmem : (⟨t, m, α, g⟩, σg) ∈ T)
+      (hdisj : Provenance.disjoint σf σg = true)
+      (hh : h.val = (f.val * n + g.val * m) / ((n : ℚ) + m)) :
+      ValidTrace Γ out (T ++ [(⟨t, n + m, α, h⟩, σf ∪ σg)])
+  | sumIntro (T : List (RunClaim × Provenance)) (t : Term) (n : ℕ)
+      (α β : Output) (f g h : Prob) (σ : Provenance)
+      (ht : ValidTrace Γ out T)
+      (hdisj : Output.syntacticallyDisjoint α β = true)
+      (hfmem : (⟨t, n, α, f⟩, σ) ∈ T)
+      (hgmem : (⟨t, n, β, g⟩, σ) ∈ T)
+      (hh : h.val = f.val + g.val) :
+      ValidTrace Γ out (T ++ [(⟨t, n, .sum α β, h⟩, σ)])
+  | sumElim (T : List (RunClaim × Provenance)) (t : Term) (n : ℕ)
+      (α β : Output) (r q h : Prob) (σ : Provenance)
+      (ht : ValidTrace Γ out T)
+      (hdisj : Output.syntacticallyDisjoint α β = true)
+      (hsmem : (⟨t, n, .sum α β, r⟩, σ) ∈ T)
+      (hqmem : (⟨t, n, β, q⟩, σ) ∈ T)
+      (hh : h.val = r.val - q.val) :
+      ValidTrace Γ out (T ++ [(⟨t, n, α, h⟩, σ)])
+
+/-- Forgetting the history gives a labelled trace: adequacy and erasure
+    apply to valid traces as well. -/
+theorem ValidTrace.toCertTrace {Γ : Context} {out : String → String}
+    {T : List (RunClaim × Provenance)} (h : ValidTrace Γ out T) :
+    CertTrace Γ T := by
+  induction h with
+  | nil => exact .nil
+  | event T u a tok ht hsupp hout ih => exact .event T u a tok ih hsupp
+  | sampling T t α sources f ht hmem hterm hsingle hprov1 hfreq1 hatomS
+      hdisj hne hatom hgr hf ih =>
+      exact .sampling T t α sources f ih hmem hterm hsingle hprov1 hdisj
+        hne hatom hgr hf
+  | update T t α n m f g h σf σg ht hn hm hfmem hgmem hdisj hh ih =>
+      exact .update T t α n m f g h σf σg ih hn hm hfmem hgmem hdisj hh
+  | sumIntro T t n α β f g h σ ht hdisj hfmem hgmem hh ih =>
+      exact .sumIntro T t n α β f g h σ ih hdisj hfmem hgmem hh
+  | sumElim T t n α β r q h σ ht hdisj hsmem hqmem hh ih =>
+      exact .sumElim T t n α β r q h σ ih hdisj hsmem hqmem hh
+
+theorem sum_ite_length {A : Type _} (p : A → Bool) :
+    ∀ (l : List A), (l.map (fun a => if p a then 1 else 0)).sum
+      = (l.filter p).length
+  | [] => rfl
+  | a :: t => by
+      by_cases h : p a <;> simp [h, sum_ite_length p t] <;> omega
+
+/-- **Value-aware subject reduction.**  Along a valid trace, every cell's
+    sample count is the number of draws it cites, and its frequency times
+    that count is the number of cited draws whose outcome matched. -/
+theorem ValidTrace.valid {Γ : Context} {out : String → String}
+    {T : List (RunClaim × Provenance)} (h : ValidTrace Γ out T) :
+    ∀ c ∈ T, ValidCell out c := by
+  induction h with
+  | nil => intro c hc; exact absurd hc (List.not_mem_nil)
+  | event T u a tok ht hsupp hout ih =>
+      intro c hc
+      rcases List.mem_append.mp hc with hc | hc
+      · exact ih c hc
+      · rw [List.mem_singleton] at hc; subst hc
+        refine ⟨by simp, ?_⟩
+        simp [hitCount, Finset.filter_singleton, hout, Output.atoms, Prob.one]
+  | sampling T t α sources f ht hmem hterm hsingle hprov1 hfreq1 hatomS
+      hdisj hne hatom hgr hf ih =>
+      intro c hc
+      rcases List.mem_append.mp hc with hc | hc
+      · exact ih c hc
+      · rw [List.mem_singleton] at hc; subst hc
+        have hcard : ((sources.map
+              (fun s : RunClaim × Provenance => s.2)).foldl (· ∪ ·) ∅).card
+            = sources.length := by
+          rw [card_foldl_union _ hdisj, List.map_map]
+          have hcards1 : sources.map
+                (Finset.card ∘ (fun s : RunClaim × Provenance => s.2))
+              = sources.map (fun _ => (1 : ℕ)) :=
+            List.map_congr_left (fun s hs => hprov1 s hs)
+          rw [hcards1]
+          simp
+        have hsrc : ∀ s ∈ sources,
+            hitCount out s.2 α = if s.1.output == α then 1 else 0 := by
+          intro s hs
+          obtain ⟨b, hb⟩ := hatomS s hs
+          obtain ⟨c0, hα⟩ := hatom
+          obtain ⟨hcards, hvals⟩ := ih s (hmem s hs)
+          rw [hsingle s hs] at hcards
+          obtain ⟨tok, htok⟩ := Finset.card_eq_one.mp hcards.symm
+          rw [hfreq1 s hs, hsingle s hs] at hvals
+          have hone : hitCount out s.2 s.1.output = 1 := by
+            have h1 : (1 : ℚ) = (hitCount out s.2 s.1.output : ℚ) := by
+              simpa [Prob.one] using hvals
+            exact_mod_cast h1.symm
+          rw [htok, hb] at hone
+          have houtb : out tok = b := by
+            by_contra hcon
+            rw [hitCount, Finset.filter_singleton, if_neg (by
+              simpa [Output.atoms] using hcon)] at hone
+            simp at hone
+          rw [htok, hα, hb]
+          by_cases hbc : b = c0
+          · subst hbc
+            simp [hitCount, Finset.filter_singleton, houtb, Output.atoms]
+          · simp [hitCount, Finset.filter_singleton, houtb, Output.atoms, hbc]
+        refine ⟨hcard.symm, ?_⟩
+        have hNne : ((sources.length : ℕ) : ℚ) ≠ 0 := by
+          have := List.length_pos_of_ne_nil hne
+          exact_mod_cast Nat.pos_iff_ne_zero.mp this
+        have hfN : f.val * ((sources.length : ℕ) : ℚ)
+            = ((sources.filter (fun s => s.1.output == α)).length : ℚ) := by
+          rw [hf]
+          field_simp
+        have hhits : hitCount out ((sources.map
+              (fun s : RunClaim × Provenance => s.2)).foldl (· ∪ ·) ∅) α
+            = (sources.filter (fun s => s.1.output == α)).length := by
+          rw [hitCount_foldl_union out α _ hdisj, List.map_map]
+          have hmap2 : sources.map ((fun σ => hitCount out σ α)
+                ∘ (fun s : RunClaim × Provenance => s.2))
+              = sources.map (fun s => if s.1.output == α then (1 : ℕ) else 0) :=
+            List.map_congr_left (fun s hs => hsrc s hs)
+          rw [hmap2]
+          exact sum_ite_length _ sources
+        simpa [hhits] using hfN
+  | update T t α n m f g h σf σg ht hn hm hfmem hgmem hdisj hh ih =>
+      intro c hc
+      rcases List.mem_append.mp hc with hc | hc
+      · exact ih c hc
+      · rw [List.mem_singleton] at hc; subst hc
+        obtain ⟨hnf, hvf⟩ := ih _ hfmem
+        obtain ⟨hng, hvg⟩ := ih _ hgmem
+        have hdisj' : Disjoint σf σg := by
+          simp only [Provenance.disjoint, decide_eq_true_eq] at hdisj
+          exact Finset.disjoint_iff_inter_eq_empty.mpr hdisj
+        refine ⟨?_, ?_⟩
+        · simp only at hnf hng ⊢
+          rw [Finset.card_union_of_disjoint hdisj', ← hnf, ← hng]
+        · simp only at hvf hvg ⊢
+          rw [hitCount_union_of_disjoint out hdisj α]
+          have hnm : ((n : ℚ) + m) ≠ 0 := by positivity
+          have : h.val * ((n : ℚ) + m) = f.val * n + g.val * m := by
+            rw [hh]
+            field_simp
+          push_cast
+          push_cast at hvf hvg this
+          linarith
+  | sumIntro T t n α β f g h σ ht hdisj hfmem hgmem hh ih =>
+      intro c hc
+      rcases List.mem_append.mp hc with hc | hc
+      · exact ih c hc
+      · rw [List.mem_singleton] at hc; subst hc
+        obtain ⟨hnf, hvf⟩ := ih _ hfmem
+        obtain ⟨hng, hvg⟩ := ih _ hgmem
+        have hatoms : α.atoms ∩ β.atoms = ∅ := by
+          have h' := hdisj
+          unfold Output.syntacticallyDisjoint at h'
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at h'
+          exact h'.2
+        refine ⟨hnf, ?_⟩
+        simp only at hvf hvg ⊢
+        rw [hitCount_sum_split out σ hatoms]
+        push_cast
+        push_cast at hvf hvg
+        rw [hh]
+        linarith
+  | sumElim T t n α β r q h σ ht hdisj hsmem hqmem hh ih =>
+      intro c hc
+      rcases List.mem_append.mp hc with hc | hc
+      · exact ih c hc
+      · rw [List.mem_singleton] at hc; subst hc
+        obtain ⟨hns, hvs⟩ := ih _ hsmem
+        obtain ⟨hnq, hvq⟩ := ih _ hqmem
+        have hatoms : α.atoms ∩ β.atoms = ∅ := by
+          have h' := hdisj
+          unfold Output.syntacticallyDisjoint at h'
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at h'
+          exact h'.2
+        refine ⟨hns, ?_⟩
+        simp only at hvs hvq ⊢
+        rw [hitCount_sum_split out σ hatoms] at hvs
+        push_cast
+        push_cast at hvs hvq
+        rw [hh]
+        linarith
+
+/-- **Value-aware subject reduction at the certificate level.**  Every cell
+    of a valid trace has a checker-accepted certificate, and the certified
+    frequency is exactly the observed hit rate of the draws it cites: the
+    certificate tells the truth about the data. -/
+theorem ValidTrace.certified_faithful {Γ : Context} {out : String → String}
+    (hwf : contextWF Γ = true)
+    (huniq : ∀ u α', (supportEntries Γ (.atom u) α').length ≤ 1)
+    {T : List (RunClaim × Provenance)} (h : ValidTrace Γ out T) :
+    ∀ c ∈ T, ∃ d : Derivation,
+      checkDerivation d = Except.ok () ∧
+      d.conclusion = ⟨Γ, .term (cellTC c)⟩ ∧
+      c.1.samples = c.2.card ∧
+      c.1.freq.val * (c.1.samples : ℚ) = (hitCount out c.2 c.1.output : ℚ) := by
+  intro c hc
+  obtain ⟨d, hacc, hconc⟩ := h.toCertTrace.certified hwf huniq c hc
+  obtain ⟨h1, h2⟩ := h.valid c hc
+  exact ⟨d, hacc, hconc, h1, h2⟩
+
 end TPTND
