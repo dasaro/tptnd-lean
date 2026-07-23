@@ -133,18 +133,19 @@ def binomialCI (n : Nat) (f p : Prob) : Constraint :=
     .interval (clampProb lo) (clampProb hi)
 
 /-- Two-sample proportion CI  𝒬(n, m, f, g) = [ℓ, h].
-    Score-test (pooled) interval for the difference f − g:
-      (f − g) ± z₉₅ · √(p̂(1−p̂)(1/n + 1/m))
-    where p̂ = (nf + mg)/(n + m) is the pooled rate under H₀: p₁ = p₂.
-    This is consistent with `binomialCI` (both use null-hypothesis variance).
+    Interval for the difference f − g at worst-case null variance:
+      (f − g) ± z · √(¼ · (1/n + 1/m))
+    The ¼ bounds p(1−p) for every common rate p, so the width needs no
+    estimate of that rate and the Chebyshev level provably transfers to
+    the implemented interval at every finite sample size, for every
+    distribution (`twoSampleCI_reject` / `twoSample_coverage`).
     Endpoints clamped to [0,1].  Returns `unknown` when n = 0 or m = 0. -/
 def twoSampleCI (n m : Nat) (f g : Prob) : Constraint :=
   if n = 0 || m = 0 then .unknown
   else
     let nq := (n : ℚ)
     let mq := (m : ℚ)
-    let pHat := (nq * f.val + mq * g.val) / (nq + mq)
-    let variance := pHat * (1 - pHat) * (1 / nq + 1 / mq)
+    let variance := (1 / 4) * (1 / nq + 1 / mq)
     let se := ratSqrt variance
     let diff := f.val - g.val
     let lo := diff - zCheb * se

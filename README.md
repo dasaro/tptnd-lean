@@ -11,8 +11,9 @@ derivation trees. Alongside it the development provides:
   acceptance implies derivability in the calculus, across every dispatched
   rule;
 - a **measure-theoretic semantics** — a run space of repeated sampling,
-  almost-sure convergence of observed frequencies, and a Chebyshev
-  coverage guarantee for trust certificates;
+  almost-sure convergence of observed frequencies, semantic soundness of
+  the expected fragment, and Chebyshev coverage guarantees — one- and
+  two-sample — for the very intervals the checker computes;
 - an **operational bridge**: real run histories map to batch certificates
   the checker provably accepts, with provenance assigned positionally and
   the certified frequency equal to the run space's observed frequency;

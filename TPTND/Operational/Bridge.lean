@@ -2,6 +2,7 @@ import TPTND.Derivable
 import TPTND.Operational.Reduction
 import TPTND.Operational.Convergence
 import TPTND.Operational.TrustGuarantee
+import TPTND.Operational.TwoSampleGuarantee
 
 /-! # The operational→static bridge
 
@@ -1007,5 +1008,28 @@ theorem Model.honest_run_certified (M : Model) (m x : String) (α : Output)
   have hlen := M.runList_length x α ω n
   exact hω (itNode_accepted m x α p ρ (M.runList x α ω n) hmx hne hinj
     (runList_supported M x α ω n) (by rw [hlen]; exact hpass))
+
+-- ============================================================================
+-- The two-sample guarantee at the artifact level
+-- ============================================================================
+
+/-- **The implemented two-sample test has a provable 5 % level.**  For two
+    independent run histories of processes with the SAME probability, the
+    checker's `twoSampleCI` reports a significant difference — the event
+    that licenses IUT2/IEx against the pair — with probability at most
+    1/20. -/
+theorem certified_twoSample_rate (M1 M2 : Model) (x y : String)
+    (α β : Output) {n m : ℕ} (hn : n ≠ 0) (hm : m ≠ 0)
+    (h0 : (M1.μ (M1.hitSet x α)).toReal = (M2.μ (M2.hitSet y β)).toReal) :
+    (pairSpace M1 M2) {ω |
+        (twoSampleCI n m (obsFreq (M1.runList x α ω.1 n) α)
+          (obsFreq (M2.runList y β ω.2 m) β)).contains Prob.zero = false}
+      ≤ ENNReal.ofReal (1 / 20) := by
+  refine le_trans (measure_mono ?_)
+    (twoSample_coverage M1 M2 x y α β hn hm h0)
+  intro ω hω
+  have h := twoSampleCI_reject hn hm _ _ hω
+  rw [obsFreq_runList_val, obsFreq_runList_val] at h
+  exact h
 
 end TPTND

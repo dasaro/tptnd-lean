@@ -211,12 +211,12 @@ private def test6 : IO Unit := do
   let τ := mkProv "τ"
   let suppL := mkSupport "left"
   let suppR := mkSupport "right"
-  let nL : Nat := 1000
-  let nR : Nat := 1000
-  let fL := P 500 1000
-  let gR := P 400 1000
+  let nL : Nat := 2000
+  let nR : Nat := 2000
+  let fL := P 1000 2000
+  let gR := P 800 2000
   let ci := twoSampleCI nL nR fL gR
-  let diff := P 100 1000  -- 0.5 - 0.4 = 0.1
+  let diff := P 200 2000  -- 0.5 - 0.4 = 0.1
   let tcL : TermClaim := ⟨.frequency, tL, nL, α, fL, σ⟩
   let tcR : TermClaim := ⟨.frequency, tR, nR, α, gR, τ⟩
   let ctxL : Context := [⟨"left", suppL, α, .unknown⟩]
