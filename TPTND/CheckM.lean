@@ -123,4 +123,26 @@ def expectOutputDecl' (c : Claim) (msg : String) :
   | .outputDecl α => pure ⟨α, rfl⟩
   | _ => throw msg
 
+
+/-- Extract a `distDecl`, carrying the claim equation (forward mode). -/
+def expectDistDecl' (c : Claim) (msg : String) :
+    CheckM {Γ : Context // c = .distDecl Γ} :=
+  match c with
+  | .distDecl Γ => pure ⟨Γ, rfl⟩
+  | _ => throw msg
+
+/-- Extract the value of an `Option`, carrying the equation (forward mode). -/
+def expectSome' {A : Type} (o : Option A) (msg : String) :
+    CheckM {a : A // o = some a} :=
+  match o with
+  | some a => pure ⟨a, rfl⟩
+  | none => throw msg
+
+/-- Extract an exact constraint, carrying the equation (forward mode). -/
+def expectExact' (c : Constraint) (msg : String) :
+    CheckM {p : Prob // c = .exact p} :=
+  match c with
+  | .exact p => pure ⟨p, rfl⟩
+  | _ => throw msg
+
 end TPTND

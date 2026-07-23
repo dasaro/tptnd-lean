@@ -310,5 +310,71 @@ inductive Derivable : Sequent → Prop where
   | outputNeg (Γ Γp : Context) (α : Output) (hwf : contextWF Γ = true)
       (hp : Derivable ⟨Γp, .outputDecl α⟩) :
       Derivable ⟨Γ, .outputDecl (.neg α)⟩
+  /-- output_atom (Table 1): an atomic output is well-formed. -/
+  | outputAtom (Γ : Context) (a : String) (hwf : contextWF Γ = true) :
+      Derivable ⟨Γ, .outputDecl (.atom a)⟩
+  /-- output_sum (Table 1). -/
+  | outputSum (Γ Γ1 Γ2 : Context) (α β : Output) (hwf : contextWF Γ = true)
+      (h1 : Derivable ⟨Γ1, .outputDecl α⟩) (h2 : Derivable ⟨Γ2, .outputDecl β⟩) :
+      Derivable ⟨Γ, .outputDecl (.sum α β)⟩
+  /-- output_prod (Table 1). -/
+  | outputProd (Γ Γ1 Γ2 : Context) (α β : Output) (hwf : contextWF Γ = true)
+      (h1 : Derivable ⟨Γ1, .outputDecl α⟩) (h2 : Derivable ⟨Γ2, .outputDecl β⟩) :
+      Derivable ⟨Γ, .outputDecl (.prod α β)⟩
+  /-- output_arr (Table 1): the arrow shape; the annotation is pinned later,
+      by I→. -/
+  | outputArr (Γ Γ1 Γ2 : Context) (α β : Output) (a : Prob)
+      (hwf : contextWF Γ = true)
+      (h1 : Derivable ⟨Γ1, .outputDecl α⟩) (h2 : Derivable ⟨Γ2, .outputDecl β⟩) :
+      Derivable ⟨Γ, .outputDecl (.arr α a β)⟩
+  /-- base (Table 1): the empty distribution. -/
+  | base (Γ : Context) (hwf : contextWF Γ = true) :
+      Derivable ⟨Γ, .distDecl []⟩
+  /-- extend (Table 1): extend a distribution by one exact entry, preserving
+      per-variable additivity. -/
+  | extend (Γc Γp Γ Γ' : Context) (e : ContextEntry) (a : Prob)
+      (hwf : contextWF Γc = true)
+      (hp : Derivable ⟨Γp, .distDecl Γ⟩)
+      (hlen : Γ'.length = Γ.length + 1)
+      (htake : Γ'.take Γ.length = Γ)
+      (hlast : Γ'.getLast? = some e)
+      (hexact : e.constraint = .exact a)
+      (hmass : (Γ.foldl (fun acc entry =>
+          if entry.name == e.name then
+            match entry.constraint with
+            | .exact p => acc + p.val
+            | _        => acc
+          else acc) (0 : ℚ)) + a.val ≤ 1) :
+      Derivable ⟨Γc, .distDecl Γ'⟩
+  /-- extend_det (Table 1): a deterministic assignment `x : α` read as
+      `x : α₁`, under the ordinary additivity discipline. -/
+  | extendDet (Γc Γp Γ Γ' : Context) (e : ContextEntry) (a : Prob)
+      (hwf : contextWF Γc = true)
+      (hp : Derivable ⟨Γp, .distDecl Γ⟩)
+      (hlen : Γ'.length = Γ.length + 1)
+      (htake : Γ'.take Γ.length = Γ)
+      (hlast : Γ'.getLast? = some e)
+      (hexact : e.constraint = .exact a)
+      (hone : a.val = 1)
+      (hmass : (Γ.foldl (fun acc entry =>
+          if entry.name == e.name then
+            match entry.constraint with
+            | .exact p => acc + p.val
+            | _        => acc
+          else acc) (0 : ℚ)) + a.val ≤ 1) :
+      Derivable ⟨Γc, .distDecl Γ'⟩
+  /-- unknown (Table 1): an opaque distribution `{x : α_[0,1] | α ∈ A}` over
+      one process, with pairwise-distinct outputs, each declared well-formed. -/
+  | unknown (Γc : Context) (e0 : ContextEntry) (rest : List ContextEntry)
+      (Δs : List Context)
+      (hwf : contextWF Γc = true)
+      (hname : rest.all (fun r => r.name == e0.name) = true)
+      (hdistinct : (((e0 :: rest).map (·.output)).eraseDups).length
+                     = (e0 :: rest).length)
+      (hunk : ∀ e ∈ (e0 :: rest), e.constraint = .unknown)
+      (hlen : Δs.length = (e0 :: rest).length)
+      (houts : ∀ pr ∈ Δs.zip (e0 :: rest),
+                 Derivable ⟨pr.1, .outputDecl pr.2.output⟩) :
+      Derivable ⟨Γc, .distDecl (e0 :: rest)⟩
 
 end TPTND
