@@ -476,4 +476,83 @@ inductive Derivable : Sequent → Prop where
       Derivable ⟨Γc, .term ⟨.frequency, t, tcs.length, α, f,
         (tcs.map (·.prov)).foldl (· ∪ ·) ∅⟩⟩
 
+  /-- Contraction (Table 7): the assumptions about one (variable, output)
+      pair — and only one — collapse to a single exact value drawn from the
+      intersection of their constraints; at least one collapsed constraint
+      must be informative, and everything else is carried over unchanged. -/
+  | contraction (Γp ctx : Context) (J : Claim)
+      (k : String × Output) (repl : ContextEntry) (a : Prob)
+      (hwf : contextWF ctx = true)
+      (hp : Derivable ⟨Γp, J⟩)
+      (hgroup : ((Γp.map (fun e => (e.name, e.output))).eraseDups).filter
+          (fun k' => (Γp.filter (fun e => (e.name, e.output) == k')).length ≥ 2 &&
+                     (ctx.filter (fun e => (e.name, e.output) == k')).length == 1)
+          = [k])
+      (hrest : contextEqSet (Γp.filter (fun e => (e.name, e.output) != k))
+                            (ctx.filter (fun e => (e.name, e.output) != k)) = true)
+      (hrepl : ctx.filter (fun e => (e.name, e.output) == k) = [repl])
+      (hexact : repl.constraint = .exact a)
+      (hinf : (Γp.filter (fun e => (e.name, e.output) == k)).any
+          (fun r => !(match r.constraint with
+            | .unknown => true
+            | .interval lo hi => decide (lo.val == 0 && hi.val == 1)
+            | _ => false)) = true)
+      (hin : (Γp.filter (fun e => (e.name, e.output) == k)).all
+          (fun r => r.constraint.contains a) = true) :
+      Derivable ⟨ctx, J⟩
+
+  /-- I-P (Table 5): form a Bayesian prior family from singleton exact
+      identity judgements sharing the family indices (x, α, y, β).  The
+      weights must sum to 1 and the hypothesis values must be pairwise
+      distinct; the family is concluded in the empty context. -/
+  | iPrior (es es' : List ContextEntry) (points : List (Prob × Prob))
+      (fam : PriorFamily)
+      (hne : es ≠ [])
+      (hlen : es.length = es'.length)
+      (hplen : points.length = es.length)
+      (hprems : ∀ pr ∈ es.zip es', Derivable ⟨[pr.1], .identity pr.2⟩)
+      (hidx : ∀ pr ∈ es.zip es',
+          pr.1.name = fam.xName ∧ pr.1.output = fam.alpha ∧
+          pr.2.name = fam.yName ∧ pr.2.output = fam.beta)
+      (hexact : ∀ q ∈ (es.zip es').zip points,
+          q.1.1.constraint = .exact q.2.1 ∧ q.1.2.constraint = .exact q.2.2)
+      (hpoints : fam.points = points)
+      (hsum : (points.map (·.2.val)).foldl (· + ·) 0 = 1)
+      (hdistinct : ((points.map (·.1.val)).eraseDups).length = points.length) :
+      Derivable ⟨[], .priorFamily fam⟩
+
+  /-- E-P (Table 5): eliminate a prior family against a frequency
+      observation of the hypothesis output, concluding the exact Bayesian
+      posterior for the hypothesis selected by the unique exact assumption
+      `x : α_{aⱼ}` in the conclusion context.  The conclusion context is
+      the observation's context plus that hypothesis, nothing else. -/
+  | ePosterior (Γp Γo ctx : Context) (fam : PriorFamily) (obs : TermClaim)
+      (concEntry se : ContextEntry) (aJ posterior : Prob) (j : Nat)
+      (hwf : contextWF ctx = true)
+      (hprior : Derivable ⟨Γp, .priorFamily fam⟩)
+      (hobs : Derivable ⟨Γo, .term obs⟩)
+      (hfne : fam.points ≠ [])
+      (hmode : obs.mode = .frequency)
+      (hα : obs.output = fam.alpha)
+      (hn : obs.samples > 0)
+      (hden : ((obs.samples : ℚ) * obs.value.val).den = 1)
+      (hnum : ((obs.samples : ℚ) * obs.value.val).num ≥ 0)
+      (hsub : ctx.all (fun e => e ∈ Γo ||
+          (e.name == fam.xName && e.output == fam.alpha &&
+           match e.constraint with | .exact _ => true | _ => false)) = true)
+      (hpres : Γo.all (· ∈ ctx) = true)
+      (hcname : concEntry.name = fam.yName)
+      (hcout : concEntry.output = fam.beta)
+      (hcexact : concEntry.constraint = .exact posterior)
+      (hse : ctx.filter (fun e =>
+          e.name == fam.xName && e.output == fam.alpha &&
+          match e.constraint with | .exact _ => true | _ => false) = [se])
+      (hsec : se.constraint = .exact aJ)
+      (hfind : (fam.points.map (fun p => (p.1.val, p.2.val))).findIdx?
+          (fun ⟨a, _⟩ => decide (a == aJ.val)) = some j)
+      (hpost : bayesianPosterior (fam.points.map (fun p => (p.1.val, p.2.val)))
+          ((obs.samples : ℚ) * obs.value.val).num.toNat obs.samples j
+          = some posterior.val) :
+      Derivable ⟨ctx, .identity concEntry⟩
+
 end TPTND

@@ -1,4 +1,5 @@
 import TPTND.CheckM
+import TPTND.Spec
 import TPTND.WellFormedness
 import TPTND.Arithmetic
 
@@ -63,54 +64,60 @@ def checkWeakeningS (d : Derivation) : CheckM Unit := do
 -- Contraction
 -- ============================================================================
 
-/-- Does a `Prob` value lie inside a `Constraint`? -/
-private def probInConstraint (a : Prob) (c : Constraint) : Bool :=
-  c.contains a
-
-def checkContraction (d : Derivation) : CheckM Unit := do
-  let ps ← expectPremises d 1 "Contraction"
+def checkContractionC (d : Derivation) :
+    CheckM (PLift ((∀ p ∈ d.premises, Derivable p.conclusion)
+                   → contextWF (getCtx d) = true
+                   → Derivable d.conclusion)) := do
+  let ⟨ps, hps_eq⟩ ← expectPremises' d 1 "Contraction"
   match ps with
   | [p] => do
     -- Premise:    Γ, x : α_{c₁}, …, x : α_{cₖ} ⊢ J   (k ≥ 2)
     -- Conclusion: Γ, x : α_a ⊢ J                     with a ∈ ⋂ᵢ cᵢ
-    ensure (getClaim d == getClaim p)
+    let ⟨hclaim⟩ ← ensure' (getClaim d == getClaim p)
       "Contraction: conclusion claim must match premise claim"
-    let premCtx := getCtx p
-    let concCtx := getCtx d
     -- Locate the contracted group by (variable, output) rather than by set
     -- difference.  Set difference fails when the contracted value `a` happens
     -- to equal one of the `cᵢ`: the surviving entry is then present in BOTH
     -- contexts, so nothing looks "added" and the rule could not fire.
-    let key := fun (e : ContextEntry) => (e.name, e.output)
-    let keys := premCtx.map key |>.eraseDups
-    let contracted := keys.filter (fun k =>
-      (premCtx.filter (fun e => key e == k)).length ≥ 2 &&
-      (concCtx.filter (fun e => key e == k)).length == 1)
-    match contracted with
+    match hgroup : (((getCtx p).map (fun e => (e.name, e.output))).eraseDups).filter
+        (fun k' => ((getCtx p).filter (fun e => (e.name, e.output) == k')).length ≥ 2 &&
+                   ((getCtx d).filter (fun e => (e.name, e.output) == k')).length == 1) with
     | [k] => do
-      let group := premCtx.filter (fun e => key e == k)
       -- everything outside the contracted group must be carried over untouched
-      let restPrem := premCtx.filter (fun e => key e != k)
-      let restConc := concCtx.filter (fun e => key e != k)
-      ensure (contextEqSet restPrem restConc)
+      let ⟨hrest⟩ ← ensure' (contextEqSet
+          ((getCtx p).filter (fun e => (e.name, e.output) != k))
+          ((getCtx d).filter (fun e => (e.name, e.output) != k)))
         "Contraction: entries outside the contracted group must be unchanged"
-      match concCtx.filter (fun e => key e == k) with
+      match hrepl : (getCtx d).filter (fun e => (e.name, e.output) == k) with
       | [replacement] => do
-        match replacement.constraint with
+        match hexact : replacement.constraint with
         | .exact a => do
           -- Every contracted entry must carry genuine information.
-          let isTrivial := fun (c : Constraint) => match c with
-            | .unknown => true
-            | .interval lo hi => decide (lo.val == 0 && hi.val == 1)
-            | _ => false
-          ensure (group.any (fun r => !isTrivial r.constraint))
+          let ⟨hinf⟩ ← ensure' (((getCtx p).filter (fun e => (e.name, e.output) == k)).any
+              (fun r => !(match r.constraint with
+                | .unknown => true
+                | .interval lo hi => decide (lo.val == 0 && hi.val == 1)
+                | _ => false)))
             "Contraction: at least one entry must have an informative (non-trivial) constraint"
-          ensure (group.all (fun r => probInConstraint a r.constraint))
+          let ⟨hin⟩ ← ensure' (((getCtx p).filter (fun e => (e.name, e.output) == k)).all
+              (fun r => r.constraint.contains a))
             "Contraction: exact value must lie in intersection of all constraints"
+          pure ⟨fun hprem hwf => by
+            have hmem : p ∈ d.premises := by
+              rw [← hps_eq]; exact List.mem_singleton_self p
+            have hpD : Derivable ⟨getCtx p, getClaim p⟩ := by
+              have := hprem p hmem; rwa [conclusion_eta] at this
+            rw [beq_iff_eq] at hclaim
+            rw [conclusion_eta, hclaim]
+            exact .contraction (getCtx p) (getCtx d) (getClaim p) k replacement a
+              hwf hpD hgroup hrest hrepl hexact hinf hin⟩
         | _ => throw "Contraction: replacement must have exact constraint"
       | _ => throw "Contraction: unreachable"
     | [] => throw "Contraction: no (variable, output) group is contracted"
     | _  => throw "Contraction: exactly one group may be contracted at a time"
   | _ => throw "Contraction: internal error"
+
+def checkContraction (d : Derivation) : CheckM Unit := do
+  let _ ← checkContractionC d
 
 end TPTND
