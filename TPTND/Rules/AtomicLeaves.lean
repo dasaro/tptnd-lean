@@ -10,19 +10,6 @@ namespace TPTND
 `identity`, `identity_star`, `obs`, `experiment`, `expectation`.
 Design doc §7.2. -/
 
-def isAtomicTerm : Term → Bool
-  | .atom _ => true
-  | _       => false
-
-/-- Find entries in Γ supporting term `t` at output `α`: the paper's
-    `∃! x:α_c ∈ Γ` fixes α to the conclusion's output, so uniqueness is
-    among entries matching both the term name and the output. -/
-def supportEntries (Γ : Context) (t : Term) (α : Output) :
-    List ContextEntry :=
-  match t with
-  | .atom s => Γ.filter (fun e => e.name == s && e.output == α)
-  | _       => []
-
 -- ============================================================================
 -- identity  (IDENTITY*₂ in PDF): |Γ| = 1, entry matches conclusion
 -- ============================================================================

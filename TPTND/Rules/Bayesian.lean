@@ -55,21 +55,6 @@ def checkIPrior (d : Derivation) : CheckM Unit := do
 -- E-P  (posterior computation)
 -- ============================================================================
 
-/-- Single-hypothesis weight: aˢ · (1−a)^{n−s} · b -/
-private def bayesWeight (a b : ℚ) (s n : Nat) : ℚ :=
-  a ^ s * (1 - a) ^ (n - s) * b
-
-/-- Bayesian posterior for hypothesis j:
-    aⱼˢ · (1−aⱼ)^{n−s} · bⱼ  /  Σᵢ aᵢˢ · (1−aᵢ)^{n−s} · bᵢ -/
-def bayesianPosterior
-    (pairs : List (ℚ × ℚ)) (s n : Nat) (j : Nat) : Option ℚ :=
-  let weights := pairs.map (fun ⟨a, b⟩ => bayesWeight a b s n)
-  let denom := weights.foldl (· + ·) 0
-  if denom == 0 then none
-  else match weights[j]? with
-    | some w => some (w / denom)
-    | none   => none
-
 /-- Extract (aᵢ, bᵢ) pairs from the prior-family premise (I-P), reading them
     from its *conclusion* (validated by `checkIPrior`), not its premises. -/
 private def extractPriorFamily (priorDeriv : Derivation) :
@@ -79,6 +64,7 @@ private def extractPriorFamily (priorDeriv : Derivation) :
   match getClaim priorDeriv with
   | .priorFamily fam => pure fam
   | _ => throw "E-P: prior premise must conclude a priorFamily claim"
+
 
 def checkEPosterior (d : Derivation) : CheckM Unit := do
   let ps ← expectAtLeastPremises d 2 "E-P"

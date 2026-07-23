@@ -1,4 +1,5 @@
 import TPTND.CheckM
+import TPTND.Spec
 import TPTND.WellFormedness
 import TPTND.Arithmetic
 
@@ -19,15 +20,39 @@ def checkOutputAtom (d : Derivation) : CheckM Unit := do
   | .outputDecl (.atom _) => pure ()
   | _ => throw "output_atom: conclusion must be outputDecl(atom _)"
 
-def checkOutputNeg (d : Derivation) : CheckM Unit := do
-  let ps ← expectPremises d 1 "output_neg"
+/-- Certifying variant of `output_neg`: the checker returns, alongside its
+    acceptance, a proof that the conclusion is derivable (given derivable
+    premises and a well-formed context).  `Prop` content erases at compile
+    time, so the runtime behaviour of `checkOutputNeg` is exactly the checks
+    below and nothing more. -/
+def checkOutputNegC (d : Derivation) :
+    CheckM (PLift ((∀ p ∈ d.premises, Derivable p.conclusion)
+                   → contextWF (getCtx d) = true
+                   → Derivable d.conclusion)) := do
+  let ⟨ps, hps_eq⟩ ← expectPremises' d 1 "output_neg"
   match ps with
-  | [p] =>
-    match getClaim p, getClaim d with
-    | .outputDecl α, .outputDecl (.neg β) =>
-      ensure (α == β) "output_neg: negated output must match premise"
-    | _, _ => throw "output_neg: expected outputDecl in premise and conclusion"
+  | [p] => do
+    let ⟨α, hα⟩ ← expectOutputDecl' (getClaim p)
+      "output_neg: expected outputDecl in premise and conclusion"
+    let ⟨δ, hδ⟩ ← expectOutputDecl' (getClaim d)
+      "output_neg: expected outputDecl in premise and conclusion"
+    match hneg : δ with
+    | .neg β => do
+      let ⟨hab⟩ ← ensure' (α == β) "output_neg: negated output must match premise"
+      pure ⟨fun hprem hwf => by
+        rw [beq_iff_eq] at hab; subst hab
+        have hmem : p ∈ d.premises := by
+          rw [← hps_eq]; exact List.mem_singleton_self p
+        have hpD : Derivable ⟨getCtx p, .outputDecl α⟩ := by
+          have := hprem p hmem
+          rwa [conclusion_eta, hα] at this
+        rw [conclusion_eta, hδ]
+        exact .outputNeg (getCtx d) (getCtx p) α hwf hpD⟩
+    | _ => throw "output_neg: expected outputDecl in premise and conclusion"
   | _ => throw "output_neg: internal error"
+
+def checkOutputNeg (d : Derivation) : CheckM Unit := do
+  let _ ← checkOutputNegC d
 
 private def checkOutputBinary (d : Derivation) (rule : String)
     (mk : Output → Output → Output) : CheckM Unit := do

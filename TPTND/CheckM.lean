@@ -99,4 +99,28 @@ def designatedName (rule : String) (t : Term) : CheckM String :=
   | .atom u => pure u
   | _       => throw s!"{rule}: observed term must be atomic to name x_u"
 
+
+/-- A derivation's conclusion, eta-expanded through the accessors. -/
+theorem conclusion_eta (d : Derivation) :
+    d.conclusion = ⟨getCtx d, getClaim d⟩ := rfl
+
+/-- `ensure`, keeping the proof of the checked condition (forward mode). -/
+def ensure' (b : Bool) (msg : String) : CheckM (PLift (b = true)) :=
+  if h : b then pure ⟨h⟩ else throw msg
+
+/-- `expectPremises`, returning the fact that the list IS `d.premises`
+    (forward mode). -/
+def expectPremises' (d : Derivation) (n : Nat) (rule : String) :
+    CheckM {ps : List Derivation // ps = d.premises} := do
+  ensure (d.premises.length == n)
+    s!"{rule}: expected {n} premise(s), got {d.premises.length}"
+  pure ⟨d.premises, rfl⟩
+
+/-- Extract an `outputDecl`, carrying the claim equation (forward mode). -/
+def expectOutputDecl' (c : Claim) (msg : String) :
+    CheckM {α : Output // c = .outputDecl α} :=
+  match c with
+  | .outputDecl α => pure ⟨α, rfl⟩
+  | _ => throw msg
+
 end TPTND

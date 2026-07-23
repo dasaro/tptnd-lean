@@ -163,4 +163,20 @@ def inConstraint (p : Prob) (c : Constraint) : Bool :=
 def notInConstraint (p : Prob) (c : Constraint) : Bool :=
   !c.contains p
 
+
+/-- Single-hypothesis weight: aˢ · (1−a)^{n−s} · b -/
+private def bayesWeight (a b : ℚ) (s n : Nat) : ℚ :=
+  a ^ s * (1 - a) ^ (n - s) * b
+
+/-- Bayesian posterior for hypothesis j:
+    aⱼˢ · (1−aⱼ)^{n−s} · bⱼ  /  Σᵢ aᵢˢ · (1−aᵢ)^{n−s} · bᵢ -/
+def bayesianPosterior
+    (pairs : List (ℚ × ℚ)) (s n : Nat) (j : Nat) : Option ℚ :=
+  let weights := pairs.map (fun ⟨a, b⟩ => bayesWeight a b s n)
+  let denom := weights.foldl (· + ·) 0
+  if denom == 0 then none
+  else match weights[j]? with
+    | some w => some (w / denom)
+    | none   => none
+
 end TPTND
