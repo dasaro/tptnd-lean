@@ -63,7 +63,7 @@ def weightedFreq (n : Nat) (f : Prob) (m : Nat) (g : Prob) : Option Prob :=
 -- Rational square-root approximation (Newton's method, 15 iterations)
 -- ============================================================================
 
-private def ratSqrtAux (x : ℚ) : Nat → ℚ → ℚ
+def ratSqrtAux (x : ℚ) : Nat → ℚ → ℚ
   | 0, y => y
   | n + 1, y =>
     if y = 0 then 0
@@ -77,7 +77,7 @@ private def ratSqrtAux (x : ℚ) : Nat → ℚ → ℚ
     nearest could land below √x by up to 5·10⁻⁷, making the implemented
     interval NARROWER than the exact acceptance region — which is exactly the
     case `trust_coverage` does not cover. -/
-private def roundRatUp (q : ℚ) (precision : Nat) : ℚ :=
+def roundRatUp (q : ℚ) (precision : Nat) : ℚ :=
   if precision = 0 then q
   else
     -- ⌈q · precision⌉ / precision; for num ≥ 0, den > 0.
@@ -112,7 +112,7 @@ def ratSqrt (x : ℚ) : ℚ :=
     The rational is rounded **up** (`4.472136 > √20`) on purpose: the
     implemented interval must never be narrower than the exact acceptance
     region, or the 5 % bound would not transfer to it. -/
-private def zCheb : ℚ := 559017 / 125000
+def zCheb : ℚ := 559017 / 125000
 
 /-- Clamp a rational to [0,1] and wrap as `Prob`. -/
 def clampProb (q : ℚ) : Prob :=

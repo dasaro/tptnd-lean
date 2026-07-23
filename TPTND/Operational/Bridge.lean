@@ -1,6 +1,7 @@
 import TPTND.Derivable
 import TPTND.Operational.Reduction
 import TPTND.Operational.Convergence
+import TPTND.Operational.TrustGuarantee
 
 /-! # The operational→static bridge
 
@@ -782,5 +783,229 @@ theorem pairNode_derivable (x y : String) (α β : Output) (a b : Prob)
     Derivable ⟨mergeContexts [[expectEntry x α a], [expectEntry y β b]],
       .term (pairTC x y α β a b tok n)⟩ :=
   checker_sound _ (pairNode_accepted x y α β a b tok n hxy hn)
+
+-- ============================================================================
+-- The trust guarantee for the implemented test, at the artifact level
+-- ============================================================================
+
+open MeasureTheory
+
+/-- The certified value of a run history IS the run space's observed
+    frequency. -/
+theorem obsFreq_runList_val (M : Model) (x : String) (α : Output)
+    (ω : ℕ → M.Ω) (n : ℕ) :
+    (((obsFreq (M.runList x α ω n) α).val : ℝ)) = M.observedFreq x α n ω := by
+  have hlen := M.runList_length x α ω n
+  rw [show (obsFreq (M.runList x α ω n) α).val
+      = (((M.runList x α ω n).filter (·.output == α)).length : ℚ)
+        / (((M.runList x α ω n).length : ℚ)) from rfl]
+  simp only [hlen]
+  push_cast
+  exact M.sampling_adequate x α ω n
+
+/-- **The implemented test has a provable 5 % level.**  If the model is
+    correct, the probability that a run history's frequency falls outside
+    the very interval `binomialCI` computes — the interval a checker-accepted
+    IT certificate carries — is at most 1/20. -/
+theorem Model.certified_trust_coverage (M : Model) (x : String) (α : Output)
+    {n : ℕ} (hn : n ≠ 0) (p : Prob)
+    (hp : ((p.val : ℝ)) = (M.μ (M.hitSet x α)).toReal)
+    (hpos : 0 < (M.μ (M.hitSet x α)).toReal
+              * (1 - (M.μ (M.hitSet x α)).toReal)) :
+    M.runSpace {ω |
+        (binomialCI n (obsFreq (M.runList x α ω n) α) p).contains p = false}
+      ≤ ENNReal.ofReal (1 / 20) := by
+  have hz20 : (20 : ℝ) ≤ ((zCheb : ℚ) : ℝ) ^ 2 := by
+    have : (20 : ℚ) ≤ zCheb ^ 2 := by norm_num [zCheb]
+    exact_mod_cast this
+  have hzpos : (0 : ℝ) < ((zCheb : ℚ) : ℝ) := by
+    have : (0 : ℚ) < zCheb := by norm_num [zCheb]
+    exact_mod_cast this
+  have hsub : {ω | (binomialCI n (obsFreq (M.runList x α ω n) α) p).contains p
+        = false}
+      ⊆ {ω | ((zCheb : ℚ) : ℝ) * Real.sqrt
+          ((M.μ (M.hitSet x α)).toReal * (1 - (M.μ (M.hitSet x α)).toReal) / n)
+          ≤ |M.observedFreq x α n ω - (M.μ (M.hitSet x α)).toReal|} := by
+    intro ω hω
+    have h := binomialCI_reject hn (obsFreq (M.runList x α ω n) α) p hω
+    rw [hp, obsFreq_runList_val] at h
+    exact h
+  refine le_trans (measure_mono hsub) ?_
+  refine le_trans (M.trust_coverage x α hn hzpos hpos) ?_
+  apply ENNReal.ofReal_le_ofReal
+  rw [div_le_div_iff₀ (by positivity) (by norm_num : (0:ℝ) < 20)]
+  linarith
+
+/-- The same bound, read as the false-alarm rate of the UNtrust test: honest
+    evidence supports an IUT certificate against the true model probability
+    with probability at most 1/20. -/
+theorem Model.certified_untrust_rate (M : Model) (x : String) (α : Output)
+    {n : ℕ} (hn : n ≠ 0) (p : Prob)
+    (hp : ((p.val : ℝ)) = (M.μ (M.hitSet x α)).toReal)
+    (hpos : 0 < (M.μ (M.hitSet x α)).toReal
+              * (1 - (M.μ (M.hitSet x α)).toReal)) :
+    M.runSpace {ω |
+        notInConstraint p (binomialCI n (obsFreq (M.runList x α ω n) α) p)
+          = true}
+      ≤ ENNReal.ofReal (1 / 20) := by
+  have := M.certified_trust_coverage x α hn p hp hpos
+  refine le_trans (le_of_eq ?_) this
+  congr 1
+  ext ω
+  simp [notInConstraint]
+
+-- ============================================================================
+-- A full IT certificate from honest runs
+-- ============================================================================
+
+/-- The complete trust certificate for a run history: the model assumption
+    cited by identity, the history collected by `sampling`, and the two
+    joined by `IT`. -/
+def itNode (m x : String) (α : Output) (p : Prob) (ρ : ℕ → String)
+    (runs : List RunClaim) : Derivation :=
+  .node "IT"
+    [.node "identity" [] ⟨[expectEntry m α p], .identity (expectEntry m α p)⟩
+       false,
+     batchNode (obsContext x α) x α ρ runs 0]
+    ⟨mergeContexts [[expectEntry m α p], obsContext x α],
+     .trust (.trust .oneSample (.atom x) runs.length α (obsFreq runs α) p
+       (binomialCI runs.length (obsFreq runs α) p) (batchProv x ρ runs 0))⟩
+    false
+
+theorem merge_one_two (me e1 e2 : ContextEntry)
+    (h1 : (e1 == me) = false) (h2 : (e2 == me) = false)
+    (h3 : (e2 == e1) = false) :
+    mergeContexts [[me], [e1, e2]] = [me, e1, e2] := by
+  simp [mergeContexts, List.eraseDups, List.eraseDupsBy, List.eraseDupsBy.loop,
+        h1, h2, h3]
+
+theorem itCtx_wf (m x : String) (α : Output) (p : Prob) (hmx : m ≠ x) :
+    contextWF (expectEntry m α p :: obsContext x α) = true := by
+  have hxm : (x == m) = false := beq_eq_false_iff_ne.mpr (Ne.symm hmx)
+  have hmx' : (m == x) = false := beq_eq_false_iff_ne.mpr hmx
+  have hg : groupMass
+      [⟨x, {x}, α, .unknown⟩, ⟨x, {x}, Output.neg α, .unknown⟩]
+      = fun _ => 0 := by
+    funext β
+    by_cases hb1 : (α == β) <;> by_cases hb2 : (Output.neg α == β) <;>
+      simp [groupMass, List.filter, hb1, hb2, exactMass, intervalLower]
+  simp [contextWF, obsContext, expectEntry, entryWF, constraintWF,
+        variableNames, variableMass, hxm, hmx', hg, groupMass, exactMass,
+        intervalLower, p.hhi]
+
+/-- **Honest runs certify with probability at least 95 %.**  If the model is
+    correct, the probability that a run history fails to yield a
+    checker-accepted IT certificate is at most 1/20.  (The only data-dependent
+    side condition is the CI test; everything else holds by construction.) -/
+theorem itNode_accepted (m x : String) (α : Output) (p : Prob)
+    (ρ : ℕ → String) (runs : List RunClaim)
+    (hmx : m ≠ x) (hne : runs ≠ []) (hinj : Function.Injective ρ)
+    (hsupp : ∀ r ∈ runs,
+      (supportEntries (obsContext x α) (.atom x) r.output).length = 1)
+    (hpass : (binomialCI runs.length (obsFreq runs α) p).contains p = true) :
+    checkDerivation (itNode m x α p ρ runs) = Except.ok () := by
+  have hee1 : ((⟨x, {x}, α, .unknown⟩ : ContextEntry)
+      == expectEntry m α p) = false := by
+    refine beq_eq_false_iff_ne.mpr ?_
+    intro hcon
+    exact hmx (by
+      have := congrArg ContextEntry.name hcon
+      simpa [expectEntry] using this.symm)
+  have hee2 : ((⟨x, {x}, Output.neg α, .unknown⟩ : ContextEntry)
+      == expectEntry m α p) = false := by
+    refine beq_eq_false_iff_ne.mpr ?_
+    intro hcon
+    exact hmx (by
+      have := congrArg ContextEntry.name hcon
+      simpa [expectEntry] using this.symm)
+  have hee3 : ((⟨x, {x}, Output.neg α, .unknown⟩ : ContextEntry)
+      == (⟨x, {x}, α, .unknown⟩ : ContextEntry)) = false := by
+    refine beq_eq_false_iff_ne.mpr ?_
+    intro hcon
+    have := congrArg ContextEntry.output hcon
+    exact Output.neg_ne_self α (by simpa using this)
+  have hmerge : mergeContexts [[expectEntry m α p], obsContext x α]
+      = expectEntry m α p :: obsContext x α := by
+    rw [show obsContext x α
+        = [⟨x, {x}, α, .unknown⟩, ⟨x, {x}, Output.neg α, .unknown⟩] from rfl]
+    exact merge_one_two _ _ _ hee1 hee2 hee3
+  have hwf : contextWF (mergeContexts
+      [[expectEntry m α p], obsContext x α]) = true := by
+    rw [hmerge]
+    exact itCtx_wf m x α p hmx
+  refine checkDerivation_node_ok _ _ _ _ hwf ?_ ?_
+  · rw [show checkNode (Derivation.node "IT"
+          [.node "identity" []
+             ⟨[expectEntry m α p], .identity (expectEntry m α p)⟩ false,
+           batchNode (obsContext x α) x α ρ runs 0]
+          ⟨mergeContexts [[expectEntry m α p], obsContext x α],
+           .trust (.trust .oneSample (.atom x) runs.length α (obsFreq runs α)
+             p (binomialCI runs.length (obsFreq runs α) p)
+             (batchProv x ρ runs 0))⟩ false)
+        = checkIT (Derivation.node "IT"
+          [.node "identity" []
+             ⟨[expectEntry m α p], .identity (expectEntry m α p)⟩ false,
+           batchNode (obsContext x α) x α ρ runs 0]
+          ⟨mergeContexts [[expectEntry m α p], obsContext x α],
+           .trust (.trust .oneSample (.atom x) runs.length α (obsFreq runs α)
+             p (binomialCI runs.length (obsFreq runs α) p)
+             (batchProv x ρ runs 0))⟩ false) from rfl]
+    simp only [checkIT, expectPremises, Derivation.premises,
+               Derivation.conclusion, getClaim, getCtx, batchNode, batchTC,
+               expectEntry, ensure, expectIdentity, expectExact,
+               expectTermClaim, inConstraint]
+    simp [contextEqSet_refl, hpass, expectEntry]
+    rfl
+  · refine checkPremisesList_ok _ ?_
+    intro q hq
+    rcases List.mem_cons.mp hq with h | h
+    · subst h
+      refine checkDerivation_node_ok _ _ _ _ (expectEntry_wf m α p) ?_ rfl
+      rw [show checkNode (Derivation.node "identity" []
+            ⟨[expectEntry m α p], .identity (expectEntry m α p)⟩ false)
+          = checkIdentity (Derivation.node "identity" []
+            ⟨[expectEntry m α p], .identity (expectEntry m α p)⟩ false)
+          from rfl]
+      simp [checkIdentity, expectPremises, Derivation.premises,
+            Derivation.conclusion, getClaim, getCtx, ensure]
+      rfl
+    · rw [List.mem_singleton] at h
+      subst h
+      exact batchNode_accepted (obsContext x α) x α ρ runs 0
+        (obsContext_wf x α) hne hinj hsupp
+
+/-- **The end-to-end guarantee for the artifact.**  For a correct model, the
+    probability that `n` honest runs fail to produce a checker-accepted IT
+    certificate is at most 1/20 — and by `checker_sound`, every certificate
+    that IS produced has a derivable conclusion. -/
+theorem Model.honest_run_certified (M : Model) (m x : String) (α : Output)
+    {n : ℕ} (hn : n ≠ 0) (p : Prob) (ρ : ℕ → String)
+    (hinj : Function.Injective ρ) (hmx : m ≠ x)
+    (hp : ((p.val : ℝ)) = (M.μ (M.hitSet x α)).toReal)
+    (hpos : 0 < (M.μ (M.hitSet x α)).toReal
+              * (1 - (M.μ (M.hitSet x α)).toReal)) :
+    M.runSpace {ω |
+        checkDerivation (itNode m x α p ρ (M.runList x α ω n))
+          ≠ Except.ok ()}
+      ≤ ENNReal.ofReal (1 / 20) := by
+  refine le_trans (measure_mono ?_)
+    (M.certified_trust_coverage x α hn p hp hpos)
+  intro ω hω
+  simp only [Set.mem_setOf_eq] at hω ⊢
+  by_contra hcon
+  have hpass : (binomialCI n (obsFreq (M.runList x α ω n) α) p).contains p
+      = true := by
+    cases hb : (binomialCI n (obsFreq (M.runList x α ω n) α) p).contains p
+    · exact absurd hb hcon
+    · rfl
+  have hne : M.runList x α ω n ≠ [] := by
+    intro hnil
+    have := M.runList_length x α ω n
+    rw [hnil] at this
+    simp at this
+    omega
+  have hlen := M.runList_length x α ω n
+  exact hω (itNode_accepted m x α p ρ (M.runList x α ω n) hmx hne hinj
+    (runList_supported M x α ω n) (by rw [hlen]; exact hpass))
 
 end TPTND

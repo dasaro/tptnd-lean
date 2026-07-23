@@ -1,4 +1,5 @@
 import TPTND.Operational.RunSpace
+import TPTND.Arithmetic
 import Mathlib.Probability.Moments.Variance
 
 /-! # What a Trust certificate guarantees
@@ -25,11 +26,12 @@ least `1 − 1/z² = 0.95`.
 
 Two honest caveats.
 
-* The theorem is about the **exact** acceptance region
-  `|f − p| ≤ c·√(p(1−p)/n)`.  `Arithmetic.binomialCI` implements it with a
-  rational Newton approximation of the square root; the error analysis of
-  that approximation is not formalised, so the link between this theorem and
-  the implemented interval is exact only up to that approximation.
+* `Arithmetic.binomialCI` implements the acceptance region with a rational
+  Newton approximation of the square root.  The approximation only ever
+  rounds UP (`ratSqrt_ge_sqrt` below), so the implemented interval is never
+  narrower than the exact region and the level transfers to the artifact:
+  `binomialCI_reject` turns a rejection by the implemented test into
+  membership in the exact rejection event.
 * Chebyshev is loose.  Sharpening `1/z²` towards the nominal level needs a
   Berry–Esseen or exact-binomial argument, which is a separate project.
 -/
@@ -258,5 +260,145 @@ theorem Model.type_II_bound (M : Model) (x : String) (α : Output)
   refine le_trans hcheb ?_
   apply ENNReal.ofReal_le_ofReal
   rw [M.variance_observedFreq x α hn, ← hp]
+
+-- ============================================================================
+-- The implemented interval is never narrower than the exact region
+-- ============================================================================
+
+/-- Ceiling rounding never rounds down. -/
+theorem roundRatUp_ge (q : ℚ) (precision : Nat) :
+    q ≤ roundRatUp q precision := by
+  unfold roundRatUp
+  split_ifs with h
+  · exact le_refl q
+  · have hP : (0 : ℤ) < (precision : ℤ) := by
+      exact_mod_cast Nat.pos_of_ne_zero h
+    have hPq : (0 : ℚ) < (precision : ℚ) := by
+      exact_mod_cast Nat.pos_of_ne_zero h
+    have hden : (0 : ℤ) < (q.den : ℤ) := by exact_mod_cast q.pos
+    have hdenq : (0 : ℚ) < (q.den : ℚ) := by exact_mod_cast q.pos
+    set a : ℤ := q.num * (precision : ℤ) with ha
+    set k : ℤ := (a + q.den - 1) / q.den with hk
+    have hstep := Int.lt_ediv_add_one_mul_self (a + q.den - 1) hden
+    have hkey : a ≤ k * q.den := by
+      rw [hk]
+      nlinarith [hstep]
+    have hqP : q * (precision : ℚ) = (a : ℚ) / (q.den : ℚ) := by
+      rw [ha]
+      push_cast
+      conv_lhs => rw [← Rat.num_div_den q]
+      ring
+    rw [le_div_iff₀ hPq, hqP, div_le_iff₀ hdenq]
+    exact_mod_cast hkey
+
+/-- Each Newton iterate stays above the true square root (AM–GM), so the
+    whole iteration does. -/
+theorem ratSqrtAux_ge_sqrt (x : ℚ) (hx : 0 < x) :
+    ∀ (k : Nat) (y : ℚ), 0 < y → Real.sqrt (x : ℝ) ≤ (y : ℝ) →
+      Real.sqrt (x : ℝ) ≤ ((ratSqrtAux x k y : ℚ) : ℝ)
+  | 0, y, _, hy => by simpa [ratSqrtAux] using hy
+  | k + 1, y, hypos, hy => by
+      rw [ratSqrtAux, if_neg (ne_of_gt hypos)]
+      have hyR : (0 : ℝ) < (y : ℝ) := by exact_mod_cast hypos
+      have hxR : (0 : ℝ) < ((x : ℚ) : ℝ) := by exact_mod_cast hx
+      refine ratSqrtAux_ge_sqrt x hx k _ (by positivity) ?_
+      push_cast
+      have hs := Real.sq_sqrt hxR.le
+      have hkey : (y : ℝ) + (x : ℝ) / y - 2 * Real.sqrt (x : ℝ)
+          = ((y : ℝ) - Real.sqrt (x : ℝ)) ^ 2 / y := by
+        field_simp
+        nlinarith [hs]
+      have hnn : (0 : ℝ) ≤ ((y : ℝ) - Real.sqrt (x : ℝ)) ^ 2 / y :=
+        div_nonneg (sq_nonneg _) hyR.le
+      rw [le_div_iff₀ (by norm_num : (0:ℝ) < 2)]
+      linarith [hkey, hnn]
+
+/-- **The implemented square root never under-approximates.** -/
+theorem ratSqrt_ge_sqrt (x : ℚ) :
+    Real.sqrt ((x : ℚ) : ℝ) ≤ ((ratSqrt x : ℚ) : ℝ) := by
+  unfold ratSqrt
+  split_ifs with h
+  · have hle : ((x : ℚ) : ℝ) ≤ 0 := by exact_mod_cast h
+    have h0 : Real.sqrt ((x : ℚ) : ℝ) = 0 := Real.sqrt_eq_zero'.mpr hle
+    push_cast
+    rw [h0]
+  · rw [not_le] at h
+    have hinit : Real.sqrt ((x : ℚ) : ℝ) ≤ ((max x 1 : ℚ) : ℝ) := by
+      push_cast
+      rcases le_total ((x : ℚ) : ℝ) 1 with h1 | h1
+      · exact le_trans (Real.sqrt_le_one.mpr h1) (le_max_right _ _)
+      · refine le_trans ?_ (le_max_left _ _)
+        calc Real.sqrt ((x : ℚ) : ℝ)
+            ≤ Real.sqrt (((x : ℚ) : ℝ) ^ 2) := Real.sqrt_le_sqrt (by nlinarith)
+          _ = ((x : ℚ) : ℝ) := Real.sqrt_sq (by linarith)
+    have haux := ratSqrtAux_ge_sqrt x h 15 (max x 1)
+      (lt_max_of_lt_right one_pos) hinit
+    refine le_trans haux ?_
+    exact_mod_cast roundRatUp_ge (ratSqrtAux x 15 (max x 1)) 1000000
+
+/-- **Rejection by the implemented test implies rejection by the exact
+    region.**  If the model probability falls outside `binomialCI`, the
+    observed frequency is at least `z·√(p(1−p)/n)` away from it — the event
+    `trust_coverage` bounds. -/
+theorem binomialCI_reject {n : ℕ} (hn : n ≠ 0) (f p : Prob)
+    (h : (binomialCI n f p).contains p = false) :
+    ((zCheb : ℚ) : ℝ) * Real.sqrt (((p.val : ℝ)) * (1 - (p.val : ℝ)) / n)
+      ≤ |((f.val : ℝ)) - ((p.val : ℝ))| := by
+  unfold binomialCI at h
+  rw [if_neg hn] at h
+  set se : ℚ := ratSqrt (p.val * (1 - p.val) / (n : ℚ)) with hse_def
+  simp only [Constraint.contains, clampProb, Bool.and_eq_false_iff,
+             decide_eq_false_iff_not, not_le] at h
+  have hz0 : (0 : ℚ) ≤ zCheb := by norm_num [zCheb]
+  have hse0 : (0 : ℚ) ≤ se := by
+    have hs := ratSqrt_ge_sqrt (p.val * (1 - p.val) / (n : ℚ))
+    have h0 := Real.sqrt_nonneg (((p.val * (1 - p.val) / (n : ℚ) : ℚ)) : ℝ)
+    rw [hse_def]
+    exact_mod_cast le_trans h0 hs
+  have hzs : (0 : ℚ) ≤ zCheb * se := mul_nonneg hz0 hse0
+  -- rejection at the rational level: the gap exceeds the implemented width
+  have hgap : zCheb * se < |f.val - p.val| := by
+    rcases h with hlt | hgt
+    · -- p below the clamped lower endpoint
+      have hm : p.val < min 1 (f.val - zCheb * se) := by
+        rcases le_total (min 1 (f.val - zCheb * se)) 0 with hc | hc
+        · rw [max_eq_left hc] at hlt
+          linarith [p.hlo]
+        · rwa [max_eq_right hc] at hlt
+      have hpf : p.val < f.val - zCheb * se :=
+        lt_of_lt_of_le hm (min_le_right _ _)
+      rw [abs_of_nonneg (by linarith : (0 : ℚ) ≤ f.val - p.val)]
+      linarith
+    · -- p above the clamped upper endpoint
+      have hm : min 1 (f.val + zCheb * se) < p.val :=
+        lt_of_le_of_lt (le_max_right 0 _) hgt
+      have hpf : f.val + zCheb * se < p.val := by
+        rcases le_total 1 (f.val + zCheb * se) with hc | hc
+        · rw [min_eq_left hc] at hm
+          linarith [p.hhi]
+        · rwa [min_eq_right hc] at hm
+      rw [abs_of_nonpos (by linarith : f.val - p.val ≤ 0)]
+      linarith
+  -- the implemented half-width dominates the exact one
+  have hseR : Real.sqrt (((p.val : ℝ)) * (1 - (p.val : ℝ)) / n)
+      ≤ ((se : ℚ) : ℝ) := by
+    have hs := ratSqrt_ge_sqrt (p.val * (1 - p.val) / (n : ℚ))
+    rw [hse_def]
+    refine le_trans (le_of_eq ?_) hs
+    congr 1
+    push_cast
+    ring
+  have hzR : (0 : ℝ) ≤ ((zCheb : ℚ) : ℝ) := by exact_mod_cast hz0
+  have hwidth : ((zCheb : ℚ) : ℝ)
+        * Real.sqrt (((p.val : ℝ)) * (1 - (p.val : ℝ)) / n)
+      ≤ ((zCheb : ℚ) : ℝ) * ((se : ℚ) : ℝ) :=
+    mul_le_mul_of_nonneg_left hseR hzR
+  have hgapR : ((zCheb : ℚ) : ℝ) * ((se : ℚ) : ℝ)
+      ≤ |((f.val : ℝ)) - ((p.val : ℝ))| := by
+    have h' : ((zCheb * se : ℚ) : ℝ) ≤ ((|f.val - p.val| : ℚ) : ℝ) := by
+      exact_mod_cast le_of_lt hgap
+    rw [Rat.cast_mul, Rat.cast_abs, Rat.cast_sub] at h'
+    exact h'
+  exact le_trans hwidth hgapR
 
 end TPTND
