@@ -22,8 +22,9 @@ private def premiseTermClaims (ps : List Derivation) (rule : String) :
 -- sampling
 -- ============================================================================
 
-/-- Variadic premise extraction, carrying the map equation (forward mode). -/
-private def premiseTermClaimsC (ps : List Derivation) (rule : String) :
+/-- Variadic premise extraction, carrying the map equation (forward mode).
+    Public so the operational bridge can evaluate `checkSampling` symbolically. -/
+def premiseTermClaimsC (ps : List Derivation) (rule : String) :
     CheckM {tcs : List TermClaim // ps.map getClaim = tcs.map .term} :=
   match ps with
   | [] => pure ⟨[], rfl⟩
