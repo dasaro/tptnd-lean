@@ -433,7 +433,8 @@ inductive Derivable : Sequent → Prop where
       (hnewc : eNew.constraint = .exact p)
       (hnonexact : (match eOld.constraint with
                     | Constraint.exact _ => false | _ => true) = true)
-      (hcont : eOld.constraint.contains p = true) :
+      (hcont : eOld.constraint.contains p = true)
+      (hdesig : t = Term.atom eNew.name) :
       Derivable ⟨ctx, .term ⟨.expected, t, n, α, p, σ⟩⟩
   /-- ENEx (Table 6): under a No-Excess certificate and an exact benchmark
       for the right group, bound the left observation by the shifted

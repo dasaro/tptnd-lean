@@ -314,6 +314,11 @@ def checkETexC (d : Derivation) :
             "ETex: the replaced assumption must be non-exact"
           let ⟨hcont⟩ ← ensure' (eOld.constraint.contains modelP)
             "ETex: p must lie in the replaced constraint c"
+          -- The re-entered value must land on the observed term's own
+          -- variable: an expected-layer claim about `t` may only cite an
+          -- assumption designated to `t`.
+          let ⟨hdesig⟩ ← ensure' (t == Term.atom eNew.name)
+            "ETex: the replaced assumption must be the observed term's variable x_u"
           let ⟨hprov⟩ ← ensure' (conc.prov == certProv)
             "ETex: conclusion provenance must match the certificate's provenance"
           pure ⟨fun hprem hwf => by
@@ -333,7 +338,8 @@ def checkETexC (d : Derivation) :
               TermClaim.ext hmode ht hn hα hcv hprov
             rw [conclusion_eta, hcc, hconc_eq]
             exact .eTex (getCtx p) (getCtx d) t n α f modelP interval certProv
-              eOld eNew hwf hpD hfold hfnew hnm hout holdα hnewc hnonex hcont⟩
+              eOld eNew hwf hpD hfold hfnew hnm hout holdα hnewc hnonex hcont
+              (beq_iff_eq.mp hdesig)⟩
         | _, _ =>
           throw "ETex: conclusion context must replace exactly one assumption"
       | _ => throw "ETex: expected a term claim"
