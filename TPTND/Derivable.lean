@@ -32,18 +32,6 @@ preserves the theorem's direction. -/
 
 namespace TPTND
 
-/-- Probabilities with equal values are equal (the proof fields are
-    propositions). -/
-theorem Prob.val_inj {a b : Prob} (h : a.val = b.val) : a = b := by
-  cases a; cases b; simp_all
-
-/-- Term claims with equal fields are equal. -/
-theorem TermClaim.ext {a b : TermClaim}
-    (h1 : a.mode = b.mode) (h2 : a.term = b.term) (h3 : a.samples = b.samples)
-    (h4 : a.output = b.output) (h5 : a.value = b.value) (h6 : a.prov = b.prov) :
-    a = b := by
-  cases a; cases b; simp_all
-
 -- ============================================================================
 -- Inversion kit for the checking monad  (the `Derivable` spec lives in
 -- TPTND/Spec.lean, before the rule checkers)
@@ -1400,6 +1388,42 @@ theorem checkUnknown_sound (d : Derivation)
   obtain ⟨w, _, _⟩ := checkM_bind_ok h
   exact w.down hps hwf
 
+theorem checkIArr_sound (d : Derivation)
+    (hwf : contextWF (getCtx d) = true)
+    (h : checkIArr d = Except.ok ())
+    (hps : ∀ p ∈ d.premises, Derivable p.conclusion) :
+    Derivable d.conclusion := by
+  unfold checkIArr at h
+  obtain ⟨w, _, _⟩ := checkM_bind_ok h
+  exact w.down hps hwf
+
+theorem checkEArr_sound (d : Derivation)
+    (hwf : contextWF (getCtx d) = true)
+    (h : checkEArr d = Except.ok ())
+    (hps : ∀ p ∈ d.premises, Derivable p.conclusion) :
+    Derivable d.conclusion := by
+  unfold checkEArr at h
+  obtain ⟨w, _, _⟩ := checkM_bind_ok h
+  exact w.down hps hwf
+
+theorem checkETex_sound (d : Derivation)
+    (hwf : contextWF (getCtx d) = true)
+    (h : checkETex d = Except.ok ())
+    (hps : ∀ p ∈ d.premises, Derivable p.conclusion) :
+    Derivable d.conclusion := by
+  unfold checkETex at h
+  obtain ⟨w, _, _⟩ := checkM_bind_ok h
+  exact w.down hps hwf
+
+theorem checkENEx_sound (d : Derivation)
+    (hwf : contextWF (getCtx d) = true)
+    (h : checkENEx d = Except.ok ())
+    (hps : ∀ p ∈ d.premises, Derivable p.conclusion) :
+    Derivable d.conclusion := by
+  unfold checkENEx at h
+  obtain ⟨w, _, _⟩ := checkM_bind_ok h
+  exact w.down hps hwf
+
 /-- The rule names covered by the faithfulness theorem. -/
 def fragmentRule (r : String) : Bool :=
   r == "identity" || r == "identity_star" || r == "obs" || r == "update" ||
@@ -1412,7 +1436,8 @@ def fragmentRule (r : String) : Bool :=
   r == "output_neg" ||
   r == "output_atom" || r == "output_sum" || r == "output_prod" ||
   r == "output_arr" || r == "base" || r == "extend" || r == "extend_det" ||
-  r == "unknown"
+  r == "unknown" ||
+  r == "I→" || r == "E→" || r == "ETex" || r == "ENEx"
 
 mutual
 /-- Every rule in the derivation lies in the certified fragment. -/
@@ -1443,10 +1468,10 @@ theorem checker_sound :
       premisesSound ps hfrag.2 hok
     have hr := hfrag.1
     simp only [fragmentRule, Bool.or_eq_true, beq_iff_eq] at hr
-    rcases hr with ((((((((((((((((((((((((((((((((hr | hr) | hr) | hr) | hr)
-      | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr)
-      | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr)
-      | hr) | hr) | hr) | hr) <;> subst hr
+    rcases hr with ((((((((((((((((((((((((((((((((((((hr | hr) | hr) | hr) |
+      hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) |
+      hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) |
+      hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) | hr) <;> subst hr
     · exact checkIdentity_sound _ hwf hnode hpsD
     · exact checkIdentityStar_sound _ hwf hnode hpsD
     · exact checkObs_sound _ hwf hnode hpsD
@@ -1480,6 +1505,10 @@ theorem checker_sound :
     · exact checkExtend_sound _ hwf hnode hpsD
     · exact checkExtendDet_sound _ hwf hnode hpsD
     · exact checkUnknown_sound _ hwf hnode hpsD
+    · exact checkIArr_sound _ hwf hnode hpsD
+    · exact checkEArr_sound _ hwf hnode hpsD
+    · exact checkETex_sound _ hwf hnode hpsD
+    · exact checkENEx_sound _ hwf hnode hpsD
 
 theorem premisesSound :
     ∀ (ps : List Derivation), inFragmentList ps = true →

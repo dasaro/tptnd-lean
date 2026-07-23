@@ -14,6 +14,17 @@ derivability of their conclusion outright. -/
 
 namespace TPTND
 
+/-- Probabilities with equal values are equal. -/
+theorem Prob.val_inj {a b : Prob} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
+
+/-- Term claims with equal fields are equal. -/
+theorem TermClaim.ext {a b : TermClaim}
+    (h1 : a.mode = b.mode) (h2 : a.term = b.term) (h3 : a.samples = b.samples)
+    (h4 : a.output = b.output) (h5 : a.value = b.value) (h6 : a.prov = b.prov) :
+    a = b := by
+  cases a; cases b; simp_all
+
 inductive Derivable : Sequent → Prop where
   /-- Identity (Table 2, singleton form): a singleton context entry
       concludes itself. -/
@@ -376,5 +387,72 @@ inductive Derivable : Sequent → Prop where
       (houts : ∀ pr ∈ Δs.zip (e0 :: rest),
                  Derivable ⟨pr.1, .outputDecl pr.2.output⟩) :
       Derivable ⟨Γc, .distDecl (e0 :: rest)⟩
+
+  /-- I→ (Table 4): discharge the unique exact assumption `x : α_a` and
+      internalise its value as the arrow annotation. -/
+  | iArr (Γp ctx : Context) (tc : TermClaim) (x : String) (α : Output)
+      (a : Prob) (de : ContextEntry)
+      (hwf : contextWF ctx = true)
+      (hp : Derivable ⟨Γp, .term tc⟩)
+      (hfilter : Γp.filter (fun e =>
+          e.name == x && e.output == α &&
+          match e.constraint with | .exact _ => true | _ => false) = [de])
+      (hdec : de.constraint = .exact a)
+      (hctx : contextEqSet ctx (Γp.filter (· != de)) = true) :
+      Derivable ⟨ctx, .term ⟨tc.mode, .lam x tc.term, tc.samples,
+        .arr α a tc.output, tc.value, tc.prov⟩⟩
+  /-- E→ (Table 4): apply an abstraction to an argument matching the arrow
+      source; values multiply and the premise contexts merge. -/
+  | eArr (Γ1 Γ2 ctx : Context) (tc1 tc2 : TermClaim) (α β : Output) (a : Prob)
+      (hwf : contextWF ctx = true)
+      (h1 : Derivable ⟨Γ1, .term tc1⟩)
+      (h2 : Derivable ⟨Γ2, .term tc2⟩)
+      (hmode : tc1.mode = tc2.mode)
+      (hn : tc1.samples = tc2.samples)
+      (hprov : tc1.prov = tc2.prov)
+      (hlam : (match tc1.term with | Term.lam _ _ => true | _ => false) = true)
+      (hout : tc1.output = .arr α a β)
+      (hsrc : α = tc2.output)
+      (hctx : contextEqSet ctx (mergeContexts [Γ1, Γ2]) = true) :
+      Derivable ⟨ctx, .term ⟨tc1.mode, .app tc1.term tc2.term, tc1.samples, β,
+        probMul tc1.value tc2.value, tc1.prov⟩⟩
+  /-- ETex (Table 6): under a one-sample Trust certificate, re-enter the
+      expected layer at the trusted model value; the observed variable's own
+      non-exact assumption is replaced by the trusted exact one, and the
+      trusted value must lie in the constraint it replaces. -/
+  | eTex (Γp ctx : Context) (t : Term) (n : Nat) (α : Output)
+      (f p : Prob) (interval : Constraint) (σ : Provenance)
+      (eOld eNew : ContextEntry)
+      (hwf : contextWF ctx = true)
+      (hp : Derivable ⟨Γp, .trust (.trust .oneSample t n α f p interval σ)⟩)
+      (hold : Γp.filter (· ∉ ctx) = [eOld])
+      (hnew : ctx.filter (· ∉ Γp) = [eNew])
+      (hname : eOld.name = eNew.name)
+      (houts : eOld.output = eNew.output)
+      (holdα : eOld.output = α)
+      (hnewc : eNew.constraint = .exact p)
+      (hnonexact : (match eOld.constraint with
+                    | Constraint.exact _ => false | _ => true) = true)
+      (hcont : eOld.constraint.contains p = true) :
+      Derivable ⟨ctx, .term ⟨.expected, t, n, α, p, σ⟩⟩
+  /-- ENEx (Table 6): under a No-Excess certificate and an exact benchmark
+      for the right group, bound the left observation by the shifted
+      interval [p+ℓ, p+h]. -/
+  | eNEx (Γe Γm ctx : Context) (tcL tcR : TermClaim) (diff : Prob)
+      (lo hi : Prob) (me se : ContextEntry) (p : Prob) (σ : Provenance)
+      (hwf : contextWF ctx = true)
+      (he : Derivable ⟨Γe, .comparison (.noExcess tcL tcR diff (.interval lo hi))⟩)
+      (hm : Derivable ⟨Γm, .identity me⟩)
+      (hexact : me.constraint = .exact p)
+      (hmout : me.output = tcR.output)
+      (hsum : (probAdd p hi).isSome = true)
+      (hbase : (mergeContexts [Γe, Γm]).all (· ∈ ctx) = true)
+      (hse : se ∈ ctx)
+      (hseout : se.output = tcL.output)
+      (hsec : se.constraint = .interval (clampProb (p.val + lo.val))
+                                        (clampProb (p.val + hi.val)))
+      (hmem : me ∈ Γm) :
+      Derivable ⟨ctx, .term ⟨.frequency, tcL.term, tcL.samples, tcL.output,
+        tcL.value, σ⟩⟩
 
 end TPTND

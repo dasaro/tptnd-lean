@@ -1,4 +1,5 @@
 import TPTND.CheckM
+import TPTND.Spec
 import TPTND.WellFormedness
 import TPTND.Arithmetic
 
@@ -271,47 +272,75 @@ def checkEUT (d : Derivation) : CheckM Unit := do
 -- ETex  (trust exact elimination — re-entry to expected layer)
 -- ============================================================================
 
-def checkETex (d : Derivation) : CheckM Unit := do
-  let ps ← expectPremises d 1 "ETex"
+def checkETexC (d : Derivation) :
+    CheckM (PLift ((∀ p ∈ d.premises, Derivable p.conclusion)
+                   → contextWF (getCtx d) = true
+                   → Derivable d.conclusion)) := do
+  let ⟨ps, hps_eq⟩ ← expectPremises' d 1 "ETex"
   match ps with
   | [p] => do
-    match getClaim p with
-    | .trust (.trust kind t n α f modelP _interval certProv) => do
-      ensure (kind == CIKind.oneSample)
+    match hcl : getClaim p with
+    | .trust (.trust kind t n α f modelP interval certProv) => do
+      let ⟨hkind⟩ ← ensure' (kind == CIKind.oneSample)
         "ETex: can only eliminate a one-sample (𝒫) trust certificate"
       let premCtx := getCtx p
       -- Conclusion must be a term claim in EXPECTED mode (re-entry)
-      let conc ← expectTermClaim (getClaim d) "ETex"
-      ensure (conc.mode == .expected)
-        "ETex: conclusion must be in expected mode (re-entry)"
-      ensure (conc.term == t) "ETex: must preserve term"
-      ensure (conc.samples == n) "ETex: must preserve sample size"
-      ensure (conc.output == α) "ETex: must preserve output"
-      -- Conclusion value = model probability (the trusted exact value)
-      ensure (decide (conc.value.val == modelP.val))
-        "ETex: conclusion value must equal the trusted model probability"
-      -- Context: Γ is preserved and the observed variable's own NON-EXACT
-      -- assumption x_u : α_c is REPLACED by the trusted exact x_u : α_p,
-      -- with p ∈ c (Table 6).  Tying the two by name is what makes the
-      -- side condition non-vacuous.
-      let concCtx := getCtx d
-      match premCtx.filter (· ∉ concCtx), concCtx.filter (· ∉ premCtx) with
-      | [old], [new] =>
-        ensure (old.name == new.name && old.output == new.output)
-          "ETex: the replaced assumption must be on the same variable and output"
-        ensure (old.output == α)
-          "ETex: the replaced assumption must be on the observed output"
-        ensure (new.constraint == Constraint.exact modelP)
-          "ETex: the replacement must be the trusted exact value x_u : α_p"
-        ensure (match old.constraint with | .exact _ => false | _ => true)
-          "ETex: the replaced assumption must be non-exact"
-        ensure (old.constraint.contains modelP)
-          "ETex: p must lie in the replaced constraint c"
-      | _, _ =>
-        throw "ETex: conclusion context must replace exactly one assumption"
-      ensure (conc.prov == certProv)
-        "ETex: conclusion provenance must match the certificate's provenance"
+      match hcc : getClaim d with
+      | .term conc => do
+        let ⟨hmode⟩ ← ensure' (conc.mode == .expected)
+          "ETex: conclusion must be in expected mode (re-entry)"
+        let ⟨ht⟩ ← ensure' (conc.term == t) "ETex: must preserve term"
+        let ⟨hn⟩ ← ensure' (conc.samples == n) "ETex: must preserve sample size"
+        let ⟨hα⟩ ← ensure' (conc.output == α) "ETex: must preserve output"
+        -- Conclusion value = model probability (the trusted exact value)
+        let ⟨hval⟩ ← ensure' (decide (conc.value.val == modelP.val))
+          "ETex: conclusion value must equal the trusted model probability"
+        -- Context: Γ is preserved and the observed variable's own NON-EXACT
+        -- assumption x_u : α_c is REPLACED by the trusted exact x_u : α_p,
+        -- with p ∈ c (Table 6).  Tying the two by name is what makes the
+        -- side condition non-vacuous.
+        let concCtx := getCtx d
+        match hfold : premCtx.filter (· ∉ concCtx),
+              hfnew : concCtx.filter (· ∉ premCtx) with
+        | [eOld], [eNew] => do
+          let ⟨hsame⟩ ← ensure' (eOld.name == eNew.name && eOld.output == eNew.output)
+            "ETex: the replaced assumption must be on the same variable and output"
+          let ⟨holdα⟩ ← ensure' (eOld.output == α)
+            "ETex: the replaced assumption must be on the observed output"
+          let ⟨hnewc⟩ ← ensure' (eNew.constraint == Constraint.exact modelP)
+            "ETex: the replacement must be the trusted exact value x_u : α_p"
+          let ⟨hnonex⟩ ← ensure' (match eOld.constraint with
+            | .exact _ => false | _ => true)
+            "ETex: the replaced assumption must be non-exact"
+          let ⟨hcont⟩ ← ensure' (eOld.constraint.contains modelP)
+            "ETex: p must lie in the replaced constraint c"
+          let ⟨hprov⟩ ← ensure' (conc.prov == certProv)
+            "ETex: conclusion provenance must match the certificate's provenance"
+          pure ⟨fun hprem hwf => by
+            have hmem : p ∈ d.premises := by
+              rw [← hps_eq]; exact List.mem_singleton_self p
+            rw [beq_iff_eq] at hkind
+            subst hkind
+            have hpD : Derivable ⟨getCtx p,
+                .trust (.trust .oneSample t n α f modelP interval certProv)⟩ := by
+              have := hprem p hmem; rwa [conclusion_eta, hcl] at this
+            rw [Bool.and_eq_true] at hsame
+            obtain ⟨hnm, hout⟩ := hsame
+            rw [beq_iff_eq] at hmode ht hn hα hnm hout holdα hnewc hprov
+            have hcv : conc.value = modelP :=
+              Prob.val_inj (beq_iff_eq.mp (of_decide_eq_true hval))
+            have hconc_eq : conc = ⟨.expected, t, n, α, modelP, certProv⟩ :=
+              TermClaim.ext hmode ht hn hα hcv hprov
+            rw [conclusion_eta, hcc, hconc_eq]
+            exact .eTex (getCtx p) (getCtx d) t n α f modelP interval certProv
+              eOld eNew hwf hpD hfold hfnew hnm hout holdα hnewc hnonex hcont⟩
+        | _, _ =>
+          throw "ETex: conclusion context must replace exactly one assumption"
+      | _ => throw "ETex: expected a term claim"
     | _ => throw "ETex: premise must be a trust claim"
   | _ => throw "ETex: internal error"
+
+def checkETex (d : Derivation) : CheckM Unit := do
+  let _ ← checkETexC d
 
 end TPTND

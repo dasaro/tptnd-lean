@@ -1,4 +1,5 @@
 import TPTND.CheckM
+import TPTND.Spec
 import TPTND.WellFormedness
 import TPTND.Arithmetic
 
@@ -140,85 +141,145 @@ def checkEProdR (d : Derivation) : CheckM Unit := do
 -- I→  (arrow introduction)
 -- ============================================================================
 
-def checkIArr (d : Derivation) : CheckM Unit := do
-  let ps ← expectPremises d 1 "I→"
+def checkIArrC (d : Derivation) :
+    CheckM (PLift ((∀ p ∈ d.premises, Derivable p.conclusion)
+                   → contextWF (getCtx d) = true
+                   → Derivable d.conclusion)) := do
+  let ⟨ps, hps_eq⟩ ← expectPremises' d 1 "I→"
   match ps with
   | [p] => do
-    let tc ← expectTermClaim (getClaim p) "I→"
-    let conc ← expectTermClaim (getClaim d) "I→"
-    -- Conclusion term must be [x]t  (lam)
-    match conc.term with
-    | .lam x body => do
-      ensure (body == tc.term)
-        "I→: lambda body must match premise term"
-      -- Conclusion output must be (α ⇒ β)  where β = premise output
-      match conc.output with
-      | .arr α a β => do
-        ensure (β == tc.output) "I→: arrow target must match premise output"
-        ensure (decide (conc.value.val == tc.value.val))
-          "I→: arrow probability must equal the premise probability"
-        -- Discharged assumption: exactly one entry x : α_a in premise context,
-        -- and the arrow's annotation must BE that assumption's value.
-        let discharged := (getCtx p).filter (fun e =>
-          e.name == x && e.output == α &&
-          match e.constraint with | .exact _ => true | _ => false)
-        ensure (discharged.length == 1)
-          "I→: must discharge exactly one exact entry for x : α"
-        match discharged with
-        | [de] =>
-          ensure (de.constraint == Constraint.exact a)
-            "I→: arrow annotation must be the discharged assumption's value"
-          -- Conclusion context = premise context minus the discharged entry
-          let expectedCtx := (getCtx p).filter (· != de)
-          ensure (contextEqSet (getCtx d) expectedCtx)
-            "I→: conclusion context must be premise context minus discharged entry"
-        | _ => throw "I→: unreachable"
-        ensure (conc.samples == tc.samples) "I→: sample size must be preserved"
-        ensure (conc.prov == tc.prov) "I→: provenance must be preserved"
-        ensure (conc.mode == tc.mode) "I→: mode must be preserved"
-      | _ => throw "I→: conclusion output must be an arrow type"
-    | _ => throw "I→: conclusion term must be a lambda"
+    match htc : getClaim p with
+    | .term tc =>
+      match hcc : getClaim d with
+      | .term conc =>
+        -- Conclusion term must be [x]t  (lam)
+        match hlam : conc.term with
+        | .lam x body => do
+          let ⟨hbody⟩ ← ensure' (body == tc.term)
+            "I→: lambda body must match premise term"
+          -- Conclusion output must be (α ⇒ β)  where β = premise output
+          match harr : conc.output with
+          | .arr α a β => do
+            let ⟨hbeta⟩ ← ensure' (β == tc.output)
+              "I→: arrow target must match premise output"
+            let ⟨hval⟩ ← ensure' (decide (conc.value.val == tc.value.val))
+              "I→: arrow probability must equal the premise probability"
+            -- Discharged assumption: exactly one entry x : α_a in premise context,
+            -- and the arrow's annotation must BE that assumption's value.
+            let discharged := (getCtx p).filter (fun e =>
+              e.name == x && e.output == α &&
+              match e.constraint with | .exact _ => true | _ => false)
+            let ⟨_⟩ ← ensure' (discharged.length == 1)
+              "I→: must discharge exactly one exact entry for x : α"
+            match hde : discharged with
+            | [de] => do
+              let ⟨hdec⟩ ← ensure' (de.constraint == Constraint.exact a)
+                "I→: arrow annotation must be the discharged assumption's value"
+              -- Conclusion context = premise context minus the discharged entry
+              let expectedCtx := (getCtx p).filter (· != de)
+              let ⟨hctx⟩ ← ensure' (contextEqSet (getCtx d) expectedCtx)
+                "I→: conclusion context must be premise context minus discharged entry"
+              let ⟨hn⟩ ← ensure' (conc.samples == tc.samples)
+                "I→: sample size must be preserved"
+              let ⟨hprov⟩ ← ensure' (conc.prov == tc.prov)
+                "I→: provenance must be preserved"
+              let ⟨hmode⟩ ← ensure' (conc.mode == tc.mode)
+                "I→: mode must be preserved"
+              pure ⟨fun hprem hwf => by
+                have hmem : p ∈ d.premises := by
+                  rw [← hps_eq]; exact List.mem_singleton_self p
+                have hpD : Derivable ⟨getCtx p, .term tc⟩ := by
+                  have := hprem p hmem; rwa [conclusion_eta, htc] at this
+                rw [beq_iff_eq] at hbody hbeta hn hprov hmode hdec
+                have hcv : conc.value = tc.value :=
+                  Prob.val_inj (beq_iff_eq.mp (of_decide_eq_true hval))
+                have hconc_eq : conc = ⟨tc.mode, .lam x tc.term, tc.samples,
+                    .arr α a tc.output, tc.value, tc.prov⟩ :=
+                  TermClaim.ext hmode (by rw [hlam, hbody]) hn
+                    (by rw [harr, hbeta]) hcv hprov
+                rw [conclusion_eta, hcc, hconc_eq]
+                exact .iArr (getCtx p) (getCtx d) tc x α a de hwf hpD hde hdec hctx⟩
+            | _ => throw "I→: unreachable"
+          | _ => throw "I→: conclusion output must be an arrow type"
+        | _ => throw "I→: conclusion term must be a lambda"
+      | _ => throw "I→: expected a term claim"
+    | _ => throw "I→: expected a term claim"
   | _ => throw "I→: internal error"
+
+def checkIArr (d : Derivation) : CheckM Unit := do
+  let _ ← checkIArrC d
 
 -- ============================================================================
 -- E→  (arrow elimination)
 -- ============================================================================
 
-def checkEArr (d : Derivation) : CheckM Unit := do
-  let ps ← expectPremises d 2 "E→"
+def checkEArrC (d : Derivation) :
+    CheckM (PLift ((∀ p ∈ d.premises, Derivable p.conclusion)
+                   → contextWF (getCtx d) = true
+                   → Derivable d.conclusion)) := do
+  let ⟨ps, hps_eq⟩ ← expectPremises' d 2 "E→"
   match ps with
   | [p1, p2] => do
-    let tc1 ← expectTermClaim (getClaim p1) "E→"   -- [x]t : (α ⇒_a β)_q
-    let tc2 ← expectTermClaim (getClaim p2) "E→"   -- u : α_r
-    let conc ← expectTermClaim (getClaim d) "E→"   -- ([x]t · u) : β_{qr}
-    ensure (tc1.mode == tc2.mode && tc1.mode == conc.mode)
-      "E→: all must share the same mode"
-    ensure (tc1.samples == tc2.samples && tc1.samples == conc.samples)
-      "E→: all must share the same sample size"
-    ensure (tc1.prov == tc2.prov && tc1.prov == conc.prov)
-      "E→: all must share the same provenance"
-    -- The major premise must genuinely be an abstraction [x]t, else a
-    -- fabricated arrow claim could be eliminated.
-    match tc1.term with
-    | .lam _ _ => pure ()
-    | _ => throw "E→: major premise term must be an abstraction [x]t"
-    match tc1.output with
-    | .arr α _ β => do
-      ensure (α == tc2.output)
-        "E→: arrow source must match second premise output"
-      ensure (β == conc.output)
-        "E→: arrow target must match conclusion output"
-      -- Conclusion term = app tc1.term tc2.term
-      ensure (conc.term == Term.app tc1.term tc2.term)
-        "E→: conclusion term must be application"
-      let prod := probMul tc1.value tc2.value
-      ensure (decide (conc.value.val == prod.val))
-        "E→: conclusion value must be q · r"
-      -- Contexts merged
-      let merged := mergeContexts [getCtx p1, getCtx p2]
-      ensure (contextEqSet (getCtx d) merged)
-        "E→: conclusion context must be merge of premise contexts"
-    | _ => throw "E→: first premise output must be an arrow type"
+    match htc1 : getClaim p1 with     -- [x]t : (α ⇒_a β)_q
+    | .term tc1 =>
+      match htc2 : getClaim p2 with   -- u : α_r
+      | .term tc2 =>
+        match hcc : getClaim d with   -- ([x]t · u) : β_{qr}
+        | .term conc => do
+          let ⟨hmode⟩ ← ensure' (tc1.mode == tc2.mode && tc1.mode == conc.mode)
+            "E→: all must share the same mode"
+          let ⟨hn⟩ ← ensure' (tc1.samples == tc2.samples && tc1.samples == conc.samples)
+            "E→: all must share the same sample size"
+          let ⟨hprov⟩ ← ensure' (tc1.prov == tc2.prov && tc1.prov == conc.prov)
+            "E→: all must share the same provenance"
+          -- The major premise must genuinely be an abstraction [x]t, else a
+          -- fabricated arrow claim could be eliminated.
+          let ⟨hlam⟩ ← ensure' (match tc1.term with | .lam _ _ => true | _ => false)
+            "E→: major premise term must be an abstraction [x]t"
+          match hout : tc1.output with
+          | .arr α a β => do
+            let ⟨hsrc⟩ ← ensure' (α == tc2.output)
+              "E→: arrow source must match second premise output"
+            let ⟨htgt⟩ ← ensure' (β == conc.output)
+              "E→: arrow target must match conclusion output"
+            -- Conclusion term = app tc1.term tc2.term
+            let ⟨happ⟩ ← ensure' (conc.term == Term.app tc1.term tc2.term)
+              "E→: conclusion term must be application"
+            let prod := probMul tc1.value tc2.value
+            let ⟨hval⟩ ← ensure' (decide (conc.value.val == prod.val))
+              "E→: conclusion value must be q · r"
+            -- Contexts merged
+            let merged := mergeContexts [getCtx p1, getCtx p2]
+            let ⟨hctx⟩ ← ensure' (contextEqSet (getCtx d) merged)
+              "E→: conclusion context must be merge of premise contexts"
+            pure ⟨fun hprem hwf => by
+              have hm1 : p1 ∈ d.premises := by rw [← hps_eq]; simp
+              have hm2 : p2 ∈ d.premises := by rw [← hps_eq]; simp
+              have h1D : Derivable ⟨getCtx p1, .term tc1⟩ := by
+                have := hprem p1 hm1; rwa [conclusion_eta, htc1] at this
+              have h2D : Derivable ⟨getCtx p2, .term tc2⟩ := by
+                have := hprem p2 hm2; rwa [conclusion_eta, htc2] at this
+              rw [Bool.and_eq_true] at hmode hn hprov
+              obtain ⟨hmode12, hmodec⟩ := hmode
+              obtain ⟨hn12, hnc⟩ := hn
+              obtain ⟨hprov12, hprovc⟩ := hprov
+              rw [beq_iff_eq] at hmode12 hmodec hn12 hnc hprov12 hprovc
+              rw [beq_iff_eq] at hsrc htgt happ
+              have hcv : conc.value = probMul tc1.value tc2.value :=
+                Prob.val_inj (beq_iff_eq.mp (of_decide_eq_true hval))
+              have hconc_eq : conc = ⟨tc1.mode, .app tc1.term tc2.term,
+                  tc1.samples, β, probMul tc1.value tc2.value, tc1.prov⟩ :=
+                TermClaim.ext hmodec.symm happ hnc.symm htgt.symm hcv hprovc.symm
+              rw [conclusion_eta, hcc, hconc_eq]
+              exact .eArr (getCtx p1) (getCtx p2) (getCtx d) tc1 tc2 α β a hwf
+                h1D h2D hmode12 hn12 hprov12 hlam hout hsrc hctx⟩
+          | _ => throw "E→: first premise output must be an arrow type"
+        | _ => throw "E→: expected a term claim"
+      | _ => throw "E→: expected a term claim"
+    | _ => throw "E→: expected a term claim"
   | _ => throw "E→: internal error"
+
+def checkEArr (d : Derivation) : CheckM Unit := do
+  let _ ← checkEArrC d
 
 end TPTND
