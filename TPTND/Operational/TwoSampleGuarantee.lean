@@ -310,6 +310,56 @@ theorem twoSample_coverage {n m : ℕ} (hn : n ≠ 0) (hm : m ≠ 0)
         linarith
 
 -- ============================================================================
+-- Power (Type II error) of the two-sample test
+-- ============================================================================
+
+/-- **Two-sample power.**  The comparison test accepts "no difference" when the
+    observed frequencies differ by at most `w`.  If the two processes actually
+    have DIFFERENT probabilities whose gap exceeds `w`, the probability of
+    wrongly accepting — missing the real difference — is at most
+    `(p₁(1−p₁)/n + p₂(1−p₂)/m) / (|p₁ − p₂| − w)²`.  Chebyshev on the difference
+    of frequencies, whose mean is `p₁ − p₂` and whose variance adds by
+    independence (`variance_diff`). -/
+theorem twoSample_type_II_bound {n m : ℕ} (hn : n ≠ 0) (hm : m ≠ 0) {w : ℝ}
+    (hw : w < |(M1.μ (M1.hitSet x α)).toReal
+                - (M2.μ (M2.hitSet y β)).toReal|) :
+    (pairSpace M1 M2) {ω | |M1.observedFreq x α n ω.1
+          - M2.observedFreq y β m ω.2| ≤ w}
+      ≤ ENNReal.ofReal
+          (((M1.μ (M1.hitSet x α)).toReal
+                * (1 - (M1.μ (M1.hitSet x α)).toReal) / n
+              + (M2.μ (M2.hitSet y β)).toReal
+                  * (1 - (M2.μ (M2.hitSet y β)).toReal) / m)
+            / (|(M1.μ (M1.hitSet x α)).toReal
+                - (M2.μ (M2.hitSet y β)).toReal| - w) ^ 2) := by
+  classical
+  set p1 := (M1.μ (M1.hitSet x α)).toReal with hp1
+  set p2 := (M2.μ (M2.hitSet y β)).toReal with hp2
+  set c := |p1 - p2| - w with hc
+  have hcpos : 0 < c := by rw [hc]; linarith
+  have hE : ∫ ω, (M1.observedFreq x α n ω.1 - M2.observedFreq y β m ω.2)
+      ∂(pairSpace M1 M2) = p1 - p2 := by
+    rw [hp1, hp2]; exact integral_diff M1 M2 x y α β hn hm
+  have hsub : {ω : (ℕ → M1.Ω) × (ℕ → M2.Ω) |
+        |M1.observedFreq x α n ω.1 - M2.observedFreq y β m ω.2| ≤ w}
+      ⊆ {ω | c ≤ |(M1.observedFreq x α n ω.1 - M2.observedFreq y β m ω.2)
+              - (p1 - p2)|} := by
+    intro ω hω
+    simp only [Set.mem_setOf_eq] at hω ⊢
+    set d := M1.observedFreq x α n ω.1 - M2.observedFreq y β m ω.2 with hd
+    have htri : |p1 - p2| ≤ |d| + |d - (p1 - p2)| :=
+      calc |p1 - p2| = |d - (d - (p1 - p2))| := by ring_nf
+        _ ≤ |d| + |d - (p1 - p2)| := abs_sub _ _
+    rw [hc]; linarith
+  refine le_trans (measure_mono hsub) ?_
+  have hcheb := meas_ge_le_variance_div_sq (μ := pairSpace M1 M2)
+    (memLp_diff M1 M2 x y α β n m) hcpos
+  rw [hE] at hcheb
+  refine le_trans hcheb ?_
+  apply ENNReal.ofReal_le_ofReal
+  rw [variance_diff M1 M2 x y α β hn hm, ← hp1, ← hp2]
+
+-- ============================================================================
 -- The implemented interval
 -- ============================================================================
 
