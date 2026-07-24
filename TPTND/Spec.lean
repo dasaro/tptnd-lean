@@ -182,7 +182,7 @@ inductive Derivable : Sequent → Prop where
       for the right group, bound the left observation by the shifted
       interval [p+ℓ, p+h]. -/
   | eEx (Γe Γm ctx : Context) (tcL tcR : TermClaim) (diff : Prob)
-      (lo hi : Prob) (me se : ContextEntry) (p : Prob) (σ : Provenance)
+      (lo hi : Prob) (me se : ContextEntry) (p : Prob)
       (hwf : contextWF ctx = true)
       (he : Derivable ⟨Γe, .comparison (.excess tcL tcR diff (.interval lo hi))⟩)
       (hm : Derivable ⟨Γm, .identity me⟩)
@@ -196,7 +196,7 @@ inductive Derivable : Sequent → Prop where
                                         (clampProb (p.val + hi.val)))
       (hmem : me ∈ Γm) :
       Derivable ⟨ctx, .term ⟨.frequency, tcL.term, tcL.samples, tcL.output,
-        tcL.value, σ⟩⟩
+        tcL.value, tcL.prov⟩⟩
   /-- EXPERIMENT (Table 2): a single run.  One sample, value 1, one
       provenance token, and a unique supporting assumption in Γ. -/
   | experiment (Γ : Context) (tc : TermClaim)
@@ -440,7 +440,7 @@ inductive Derivable : Sequent → Prop where
       for the right group, bound the left observation by the shifted
       interval [p+ℓ, p+h]. -/
   | eNEx (Γe Γm ctx : Context) (tcL tcR : TermClaim) (diff : Prob)
-      (lo hi : Prob) (me se : ContextEntry) (p : Prob) (σ : Provenance)
+      (lo hi : Prob) (me se : ContextEntry) (p : Prob)
       (hwf : contextWF ctx = true)
       (he : Derivable ⟨Γe, .comparison (.noExcess tcL tcR diff (.interval lo hi))⟩)
       (hm : Derivable ⟨Γm, .identity me⟩)
@@ -454,7 +454,7 @@ inductive Derivable : Sequent → Prop where
                                         (clampProb (p.val + hi.val)))
       (hmem : me ∈ Γm) :
       Derivable ⟨ctx, .term ⟨.frequency, tcL.term, tcL.samples, tcL.output,
-        tcL.value, σ⟩⟩
+        tcL.value, tcL.prov⟩⟩
 
   /-- sampling (Table 3): collect n single-run experiments of one term into
       the observed frequency of an output.  Premises must be experiment-form

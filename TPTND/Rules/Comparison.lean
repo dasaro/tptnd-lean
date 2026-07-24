@@ -114,6 +114,10 @@ def checkEEx (d : Derivation) : CheckM Unit := do
         ensure (conc.output == leftTC.output) "EEx: must preserve left output"
         ensure (decide (conc.value.val == leftTC.value.val))
           "EEx: must preserve left frequency"
+        -- Provenance must record the LEFT observation's data lineage; an
+        -- unconstrained σ here would launder the disjointness discipline.
+        ensure (conc.prov == leftTC.prov)
+          "EEx: must preserve the left observation's provenance"
         -- Shifted interval [p+ℓ, p+h] must appear in conclusion context
         let shiftedLo := clampProb (modelP.val + lo.val)
         let shiftedHi := clampProb (modelP.val + hi.val)
@@ -188,6 +192,8 @@ def checkENExC (d : Derivation) :
                 "ENEx: must preserve output"
               let ⟨hval⟩ ← ensure' (decide (conc.value.val == leftTC.value.val))
                 "ENEx: must preserve left frequency"
+              let ⟨hprov⟩ ← ensure' (conc.prov == leftTC.prov)
+                "ENEx: must preserve the left observation's provenance"
               let shiftedLo := clampProb (modelP.val + lo.val)
               let shiftedHi := clampProb (modelP.val + hi.val)
               let shiftedConstraint := Constraint.interval shiftedLo shiftedHi
@@ -222,16 +228,17 @@ def checkENExC (d : Derivation) :
                   rw [beq_iff_eq] at hmode ht hn hα hmout hseout hsec
                   have hcv : conc.value = leftTC.value :=
                     Prob.val_inj (beq_iff_eq.mp (of_decide_eq_true hval))
+                  have hpv : conc.prov = leftTC.prov := beq_iff_eq.mp hprov
                   have hseD : se ∈ getCtx d := by
                     have : se ∈ (getCtx d).filter (· ∉ baseCtx) := by
                       rw [hf]; exact List.mem_singleton_self se
                     exact List.mem_of_mem_filter this
                   have hconc_eq : conc = ⟨.frequency, leftTC.term, leftTC.samples,
-                      leftTC.output, leftTC.value, conc.prov⟩ :=
-                    TermClaim.ext hmode ht hn hα hcv rfl
+                      leftTC.output, leftTC.value, leftTC.prov⟩ :=
+                    TermClaim.ext hmode ht hn hα hcv hpv
                   rw [conclusion_eta, hcc, hconc_eq]
                   exact .eNEx (getCtx pNoExcess) (getCtx pModel) (getCtx d)
-                    leftTC rightTC diff lo hi modelEntry se modelP conc.prov hwf
+                    leftTC rightTC diff lo hi modelEntry se modelP hwf
                     heD hmD hexact hmout hsum hbase hseD hseout hsec
                     (of_decide_eq_true hmem)⟩
               | _ =>

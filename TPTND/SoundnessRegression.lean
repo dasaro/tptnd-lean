@@ -385,6 +385,34 @@ private def attackForgedProvenance : Derivation :=
   nd "ET" [dWrap] [mE, uE, kE, ⟨"u", mkS "run", a, ci⟩]
     (.term ⟨.frequency, t, 100, a, f, mkS "FORGED"⟩)
 
+-- 28. ENEx re-emitting the left observation's frequency under a FORGED
+--     provenance.  The conclusion provenance was previously unconstrained, so
+--     the elimination could relabel a judgement's data lineage to any set —
+--     laundering the provenance-disjointness discipline that update/IT2/IEx
+--     rely on (one dataset re-minted as two "independent" ones).
+private def attackENExForgedProv : Derivation :=
+  let tx := Term.atom "x"; let ty := Term.atom "y"
+  let f := P 30 100
+  let ci := twoSampleCI 100 100 f f
+  let tc1 : TermClaim := ⟨.frequency, tx, 100, α, f, mkS "sx"⟩
+  let tc2 : TermClaim := ⟨.frequency, ty, 100, α, f, mkS "sy"⟩
+  let ex : ContextEntry := ⟨"x", mkS "X", α, .unknown⟩
+  let ey : ContextEntry := ⟨"y", mkS "Y", α, .unknown⟩
+  let dO1 := nd "obs" [] [ex] (.term tc1)
+  let dO2 := nd "obs" [] [ey] (.term tc2)
+  let dNE := nd "INEx" [dO1, dO2] [ex, ey]
+    (.comparison (.noExcess tc1 tc2 (P 0 1) ci))
+  let p := P 1 10
+  let mE : ContextEntry := ⟨"m", mkS "bench", α, .exact p⟩
+  let dModel := nd "identity" [] [mE] (.identity mE)
+  let shifted : Constraint :=
+    match ci with
+    | .interval lo hi => .interval (clampProb (p.val + lo.val)) (clampProb (p.val + hi.val))
+    | c => c
+  -- everything valid EXCEPT the conclusion provenance (FORGED ≠ sx)
+  nd "ENEx" [dNE, dModel] [ex, ey, mE, ⟨"x", mkS "X", α, shifted⟩]
+    (.term ⟨.frequency, tx, 100, α, f, mkS "FORGED"⟩)
+
 -- 27. E-P smuggling an extra assumption into its conclusion context.  The
 --     context was previously only superset-checked, so a certificate could
 --     carry arbitrary additional assumptions into scope.
@@ -434,6 +462,7 @@ def main : IO Unit := do
     ("wf mass overflow laundered by a trivial [0,1] entry", attackMassLaundering),
     ("IUT citing one of two contradictory hypotheses (cherry-pick)", attackCherryPick),
     ("ET behind a wrapper with forged conclusion provenance", attackForgedProvenance),
+    ("ENEx re-emitting the left frequency under forged provenance", attackENExForgedProv),
     ("E-P smuggling an extra assumption into its conclusion", attackPosteriorSmuggle)]
   let ok := results.filter id |>.length
   IO.println s!"\n═══════════════════════════════════════════════════════════"

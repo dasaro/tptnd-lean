@@ -823,6 +823,8 @@ theorem checkEEx_sound (d : Derivation)
         rw [ensure_eq_ok] at hval
         have hval' : conc.value = tcL.value :=
           Prob.val_inj (beq_iff_eq.mp (of_decide_eq_true hval))
+        obtain ⟨_, hprov, h⟩ := checkM_bind_ok h
+        rw [ensure_eq_ok, beq_iff_eq] at hprov
         obtain ⟨_, hbase, h⟩ := checkM_bind_ok h
         rw [ensure_eq_ok] at hbase
         rcases hf : (getCtx d).filter (· ∉ mergeContexts [getCtx pE, getCtx pM])
@@ -846,11 +848,11 @@ theorem checkEEx_sound (d : Derivation)
           have := hps pM (by rw [hP]; simp)
           rwa [conclusion_eta, heqM] at this
         have hcrec : conc =
-            ⟨.frequency, tcL.term, tcL.samples, tcL.output, tcL.value, conc.prov⟩ :=
-          TermClaim.ext hmode hterm hsam hout hval' rfl
+            ⟨.frequency, tcL.term, tcL.samples, tcL.output, tcL.value, tcL.prov⟩ :=
+          TermClaim.ext hmode hterm hsam hout hval' hprov
         rw [conclusion_eta, heqD, hcrec]
         exact .eEx (getCtx pE) (getCtx pM) (getCtx d) tcL tcR dv lo hi me se
-          mp conc.prov hwf heD hmD heqXP hmout hsum hbase hse hseout hsec (of_decide_eq_true hmem)
+          mp hwf heD hmD heqXP hmout hsum hbase hse hseout hsec (of_decide_eq_true hmem)
 
 -- ============================================================================
 -- The top-level theorem
