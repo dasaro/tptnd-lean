@@ -23,6 +23,11 @@ exercises the other **17** in two deep, dense trees.
   model cited by `identity_star`, and `ETex` re-enters the trusted value on the
   expected layer.  `E+R` recovers the other summand from the same `I+` node.
   New rules: I+, E+L, E+R, identity_star, ETex.
+  Note the `E+L`/`E+R` inside this tree sit directly on the `I+`, so each is a
+  *matching detour* in the sense of `SumNormalization` — a concrete instance of
+  `sum_detour_elimination`, which contracts them back to the other `I+` premise.
+  `dPlusELdirect` gives the non-detour use: the sum is *observed* at the
+  compound event, so `E+L` strips a summand off a sum the calculus never built.
 
 Every node is checked by `checkDerivation`; depths and node counts are measured
 by the reported figures, not asserted. -/
@@ -202,6 +207,19 @@ private def dPlusER : Derivation :=
   nd "E+R" [dPlusI, dObsB] ΓB
     (.term ⟨.frequency, tK, 8, oa, P 1 2, provRange 0 8⟩)
 
+/-- The `E+L`/`E+R` above sit directly on the `I+`, so each is a *matching
+    detour* — `sum_detour_elimination` contracts them straight back to the other
+    `I+` premise.  Genuinely non-detour use takes the sum from somewhere the
+    calculus did not just build it: here the process is observed at the compound
+    event directly, and the left summand is stripped off a sum that was never
+    introduced. -/
+private def dObsSum : Derivation :=
+  nd "obs" [] ΓB (.term ⟨.frequency, tK, 8, .sum oa ob, P 3 4, provRange 0 8⟩)
+
+private def dPlusELdirect : Derivation :=
+  nd "E+L" [dObsSum, dPool] ΓB
+    (.term ⟨.frequency, tK, 8, ob, P 1 4, provRange 0 8⟩)
+
 /-- The benchmark is cited out of a two-entry model context by `identity_star`. -/
 private def mB : ContextEntry := ⟨"m", S "m", ob, .exact (P 1 4)⟩
 private def mOther : ContextEntry := ⟨"m2", S "m2", oa, .exact (P 1 2)⟩
@@ -241,8 +259,9 @@ def main : IO Unit := do
   report "B.2  I+ over one history" dPlusI
   report "B.3  E+L (strip left summand)" dPlusEL
   report "B.4  E+R (recover right summand)" dPlusER
+  report "B.4' E+L on an OBSERVED sum (not a detour)" dPlusELdirect
   report "B.5  identity_star (cite from 2-entry model)" dModel
   report "B.6  TREE B (… → IT → ETex)" treeB
   IO.println "\nRule coverage of these two trees"
-  let covered := ((rulesOf treeA ++ rulesOf treeB ++ rulesOf dPlusER).eraseDups)
+  let covered := ((rulesOf treeA ++ rulesOf treeB ++ rulesOf dPlusER ++ rulesOf dPlusELdirect).eraseDups)
   IO.println s!"  {covered.length} distinct rules: {covered}"
