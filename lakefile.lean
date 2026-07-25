@@ -51,3 +51,6 @@ lean_exe soundness_regression where
 
 lean_exe deep_trees where
   root := `TPTND.DeepTrees
+
+lean_exe deep_trees2 where
+  root := `TPTND.DeepTreesII

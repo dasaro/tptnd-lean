@@ -15,5 +15,6 @@ import TPTND.Operational.Reduction
 import TPTND.Operational.Convergence
 import TPTND.Operational.Bridge
 import TPTND.Operational.TraceAdequacy
+import TPTND.ReductionExamples
 import TPTND.Operational.TrustGuarantee
 import TPTND.Operational.TwoSampleGuarantee
