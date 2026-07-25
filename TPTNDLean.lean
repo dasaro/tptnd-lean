@@ -7,6 +7,7 @@
 import TPTND
 import TPTND.Derivable
 import TPTND.Consistency
+import TPTND.SumNormalization
 import TPTND.Semantics
 import TPTND.SemanticSoundness
 import TPTND.Operational.RunSpace
