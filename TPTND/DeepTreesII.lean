@@ -242,51 +242,64 @@ private def treeB : Derivation :=
     (.term ⟨.expected, tK, 8, ob, P 1 4, provRange 0 8⟩)
 
 -- ════════════════════════════════════════════════════════════════════
---  TREE C — Bayesian: audit the process, then condition a prior on it
+--  TREE C — a discriminating audit, feeding a Bayesian update
 -- ════════════════════════════════════════════════════════════════════
 
-/-! `E-P` takes a prior family and *an observation*.  Nothing requires that
-    observation to be a bare leaf: here it is the conclusion of a full audit
-    chain — eight runs sampled in two batches, pooled, certified against a
-    model, and re-entered by `ET`.  The posterior is therefore conditioned on
-    evidence that has itself been trust-certified. -/
+/-! The Chebyshev half-width is `z·√(p(1−p)/n)` with `z = √20`, so it shrinks
+    only as `1/√n`: at small `n` the interval clamps to `[0,1]` and the trust
+    test accepts anything.  At `n = 500` it is `𝒫 = [2/5, 3/5]` — narrow enough
+    that the *same* observation certifies one model and refutes another:
+
+      m  : FPR_½    →  ½   ∈ [.400, .600]  →  IT   (Trust)
+      m′ : FPR_3/10 →  3/10 ∉ [.408, .592]  →  IUT  (UTrust)
+
+    That audited observation is then what the prior family is conditioned on.
+    Hypotheses are kept close together (.45 / .50 / .55): with 500 samples a
+    coarse prior saturates (the posterior would round to 1.0000), so a
+    non-degenerate posterior needs hypotheses the data cannot trivially
+    separate. -/
 
 private def FPR : Output := .atom "FPR"
 private def tQ : Term := .atom "q"
 private def qF : ContextEntry := ⟨"q", S "q", FPR, .unknown⟩
-private def qN : ContextEntry := ⟨"q", S "q", .neg FPR, .unknown⟩
-private def ΓQ : Context := [qF, qN]
+private def ΓQ : Context := [qF]
 
-private def qrun (i : Nat) (out : Output) : Derivation :=
-  nd "experiment" [] ΓQ (.term ⟨.frequency, tQ, 1, out, P 1 1, tok i⟩)
-private def qbatch (base : Nat) : List Derivation :=
-  (List.range 4).map (fun i => qrun (base + i) (if i < 2 then FPR else .neg FPR))
-
-private def qSamp1 : Derivation :=
-  nd "sampling" (qbatch 0) ΓQ
-    (.term ⟨.frequency, tQ, 4, FPR, P 1 2, provRange 0 4⟩)
-private def qSamp2 : Derivation :=
-  nd "sampling" (qbatch 4) ΓQ
-    (.term ⟨.frequency, tQ, 4, FPR, P 1 2, provRange 4 8⟩)
+/-- Two independently-provenanced half-samples of 250 runs each. -/
+private def qObs1 : Derivation :=
+  nd "obs" [] ΓQ (.term ⟨.frequency, tQ, 250, FPR, P 1 2, S "σ1"⟩)
+private def qObs2 : Derivation :=
+  nd "obs" [] ΓQ (.term ⟨.frequency, tQ, 250, FPR, P 1 2, S "σ2"⟩)
 private def qPool : Derivation :=
-  nd "update" [qSamp1, qSamp2] ΓQ
-    (.term ⟨.frequency, tQ, 8, FPR, P 1 2, provRange 0 8⟩)
+  nd "update" [qObs1, qObs2] ΓQ
+    (.term ⟨.frequency, tQ, 500, FPR, P 1 2, S "σ1" ∪ S "σ2"⟩)
 
+-- the model that survives the test
 private def mQ : ContextEntry := ⟨"m", S "m", FPR, .exact (P 1 2)⟩
 private def qModel : Derivation := nd "identity" [] [mQ] (.identity mQ)
-private def ciQ : Constraint := binomialCI 8 (P 1 2) (P 1 2)
+private def ciQ : Constraint := binomialCI 500 (P 1 2) (P 1 2)
 private def qIT : Derivation :=
   nd "IT" [qModel, qPool] (ΓQ ++ [mQ])
-    (.trust (.trust .oneSample tQ 8 FPR (P 1 2) (P 1 2) ciQ (provRange 0 8)))
-/-- `ET` re-enters the audited interval on `q` itself. -/
+    (.trust (.trust .oneSample tQ 500 FPR (P 1 2) (P 1 2) ciQ (S "σ1" ∪ S "σ2")))
 private def qET : Derivation :=
   nd "ET" [qIT] (ΓQ ++ [mQ, ⟨"q", S "q", FPR, ciQ⟩])
-    (.term ⟨.frequency, tQ, 8, FPR, P 1 2, provRange 0 8⟩)
+    (.term ⟨.frequency, tQ, 500, FPR, P 1 2, S "σ1" ∪ S "σ2"⟩)
 
-/-- Three hypotheses about the false-positive rate, each weighted by a prior
-    mass that is **not** the hypothesis value — the whole point of
-    `identity_model` (IDENTITY*₂), which is what makes genuine priors
-    expressible.  Weights sum to 1; hypothesis values are pairwise distinct. -/
+-- the model the SAME data refutes
+private def mQ' : ContextEntry := ⟨"m'", S "m'", FPR, .exact (P 3 10)⟩
+private def qModel' : Derivation := nd "identity" [] [mQ'] (.identity mQ')
+private def ciQ' : Constraint := binomialCI 500 (P 1 2) (P 3 10)
+private def qIUT : Derivation :=
+  nd "IUT" [qModel', qPool] (ΓQ ++ [mQ'])
+    (.trust (.untrust .oneSample tQ 500 FPR (P 1 2) (P 3 10) ciQ'
+      (S "σ1" ∪ S "σ2")))
+private def qEUT : Derivation :=
+  nd "EUT" [qIUT]
+    (ΓQ ++ [mQ', ⟨"q", S "q", FPR, Constraint.complementOf ciQ'⟩])
+    (.term ⟨.frequency, tQ, 500, FPR, P 1 2, S "σ1" ∪ S "σ2"⟩)
+
+/-- Three close hypotheses about the false-positive rate, each carrying a prior
+    mass that is **not** the hypothesis value — what `identity_model`
+    (IDENTITY*₂) exists to make expressible.  Weights sum to 1. -/
 private def hyp (a : Prob) : ContextEntry := ⟨"h", S "h", FPR, .exact a⟩
 private def wgt (b : Prob) : ContextEntry := ⟨"w", S "w", FPR, .exact b⟩
 private def priorPt (a b : Prob) : Derivation :=
@@ -294,24 +307,34 @@ private def priorPt (a b : Prob) : Derivation :=
 
 private def famQ : PriorFamily :=
   { xName := "h", alpha := FPR, yName := "w", beta := FPR,
-    points := [(P 1 4, P 1 2), (P 1 2, P 1 4), (P 3 4, P 1 4)] }
+    points := [(P 9 20, P 1 3), (P 1 2, P 1 3), (P 11 20, P 1 3)] }
 
 private def qPrior : Derivation :=
-  nd "I-P" [priorPt (P 1 4) (P 1 2), priorPt (P 1 2) (P 1 4),
-            priorPt (P 3 4) (P 1 4)] []
+  nd "I-P" [priorPt (P 9 20) (P 1 3), priorPt (P 1 2) (P 1 3),
+            priorPt (P 11 20) (P 1 3)] []
     (.priorFamily famQ)
 
-/-- The posterior for the hypothesis the conclusion context selects (`h : FPR_½`,
-    index 1), given 4 hits in 8 audited runs. -/
 private def postQ : Prob :=
   clampProb ((bayesianPosterior
-    [((P 1 4).val, (P 1 2).val), ((P 1 2).val, (P 1 4).val),
-     ((P 3 4).val, (P 1 4).val)] 4 8 1).getD 0)
+    [((P 9 20).val, (P 1 3).val), ((P 1 2).val, (P 1 3).val),
+     ((P 11 20).val, (P 1 3).val)] 250 500 1).getD 0)
 
+/-- `E-P` conditions the prior on the **audited** observation (the `ET`
+    conclusion), not on a bare leaf. -/
 private def treeC : Derivation :=
   nd "E-P" [qPrior, qET]
     (ΓQ ++ [mQ, ⟨"q", S "q", FPR, ciQ⟩] ++ [hyp (P 1 2)])
     (.identity (wgt postQ))
+
+private def dec4 (q : ℚ) : String :=
+  let r := (q * 10000).floor
+  s!"{r / 10000}.{(r % 10000).toNat.repr.leftpad 4 '0'}"
+private def showCI (nm : String) (c : Constraint) : IO Unit :=
+  match c with
+  | .interval lo hi => IO.println s!"         {nm} = [{dec4 lo.val}, {dec4 hi.val}]"
+  | .outsideInterval lo hi =>
+      IO.println s!"         {nm} = outside [{dec4 lo.val}, {dec4 hi.val}]"
+  | _ => IO.println s!"         {nm} = (not an interval)"
 
 -- ════════════════════════════════════════════════════════════════════
 
@@ -334,11 +357,17 @@ def main : IO Unit := do
   report "B.4' E+L on an OBSERVED sum (not a detour)" dPlusELdirect
   report "B.5  identity_star (cite from 2-entry model)" dModel
   report "B.6  TREE B (… → IT → ETex)" treeB
-  IO.println "\nTree C — Bayesian reasoning over audited evidence"
-  report "C.1  I-P prior family (3 hypotheses, weights ≠ values)" qPrior
-  report "C.2  audit chain: sampling ×2 → update → IT → ET" qET
-  report "C.3  TREE C (E-P conditioning on the audited observation)" treeC
-  IO.println s!"         posterior for h : FPR_1/2  =  {postQ.val}"
+  IO.println "\nTree C — a discriminating audit, feeding a Bayesian update"
+  report "C.1  update over two 250-run half-samples" qPool
+  report "C.2  IT  — model 1/2 SURVIVES the test" qIT
+  showCI "𝒫(500, 1/2, 1/2)" ciQ
+  report "C.3  IUT — model 3/10 is REFUTED by the same data" qIUT
+  showCI "𝒫(500, 1/2, 3/10)" ciQ'
+  report "C.4  ET  (re-enter the audited interval)" qET
+  report "C.5  EUT (re-enter the complement)" qEUT
+  report "C.6  I-P prior family (weights ≠ hypothesis values)" qPrior
+  report "C.7  TREE C (E-P on the audited observation)" treeC
+  IO.println s!"         posterior for h : FPR_1/2  ≈  {dec4 postQ.val}  (prior was 1/3)"
   IO.println "\nRule coverage of these trees"
   let covered := ((rulesOf treeA ++ rulesOf treeB ++ rulesOf treeC ++ rulesOf dPlusER ++ rulesOf dPlusELdirect).eraseDups)
   IO.println s!"  {covered.length} distinct rules: {covered}"
