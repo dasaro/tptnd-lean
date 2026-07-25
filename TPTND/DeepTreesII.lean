@@ -242,6 +242,78 @@ private def treeB : Derivation :=
     (.term ⟨.expected, tK, 8, ob, P 1 4, provRange 0 8⟩)
 
 -- ════════════════════════════════════════════════════════════════════
+--  TREE C — Bayesian: audit the process, then condition a prior on it
+-- ════════════════════════════════════════════════════════════════════
+
+/-! `E-P` takes a prior family and *an observation*.  Nothing requires that
+    observation to be a bare leaf: here it is the conclusion of a full audit
+    chain — eight runs sampled in two batches, pooled, certified against a
+    model, and re-entered by `ET`.  The posterior is therefore conditioned on
+    evidence that has itself been trust-certified. -/
+
+private def FPR : Output := .atom "FPR"
+private def tQ : Term := .atom "q"
+private def qF : ContextEntry := ⟨"q", S "q", FPR, .unknown⟩
+private def qN : ContextEntry := ⟨"q", S "q", .neg FPR, .unknown⟩
+private def ΓQ : Context := [qF, qN]
+
+private def qrun (i : Nat) (out : Output) : Derivation :=
+  nd "experiment" [] ΓQ (.term ⟨.frequency, tQ, 1, out, P 1 1, tok i⟩)
+private def qbatch (base : Nat) : List Derivation :=
+  (List.range 4).map (fun i => qrun (base + i) (if i < 2 then FPR else .neg FPR))
+
+private def qSamp1 : Derivation :=
+  nd "sampling" (qbatch 0) ΓQ
+    (.term ⟨.frequency, tQ, 4, FPR, P 1 2, provRange 0 4⟩)
+private def qSamp2 : Derivation :=
+  nd "sampling" (qbatch 4) ΓQ
+    (.term ⟨.frequency, tQ, 4, FPR, P 1 2, provRange 4 8⟩)
+private def qPool : Derivation :=
+  nd "update" [qSamp1, qSamp2] ΓQ
+    (.term ⟨.frequency, tQ, 8, FPR, P 1 2, provRange 0 8⟩)
+
+private def mQ : ContextEntry := ⟨"m", S "m", FPR, .exact (P 1 2)⟩
+private def qModel : Derivation := nd "identity" [] [mQ] (.identity mQ)
+private def ciQ : Constraint := binomialCI 8 (P 1 2) (P 1 2)
+private def qIT : Derivation :=
+  nd "IT" [qModel, qPool] (ΓQ ++ [mQ])
+    (.trust (.trust .oneSample tQ 8 FPR (P 1 2) (P 1 2) ciQ (provRange 0 8)))
+/-- `ET` re-enters the audited interval on `q` itself. -/
+private def qET : Derivation :=
+  nd "ET" [qIT] (ΓQ ++ [mQ, ⟨"q", S "q", FPR, ciQ⟩])
+    (.term ⟨.frequency, tQ, 8, FPR, P 1 2, provRange 0 8⟩)
+
+/-- Three hypotheses about the false-positive rate, each weighted by a prior
+    mass that is **not** the hypothesis value — the whole point of
+    `identity_model` (IDENTITY*₂), which is what makes genuine priors
+    expressible.  Weights sum to 1; hypothesis values are pairwise distinct. -/
+private def hyp (a : Prob) : ContextEntry := ⟨"h", S "h", FPR, .exact a⟩
+private def wgt (b : Prob) : ContextEntry := ⟨"w", S "w", FPR, .exact b⟩
+private def priorPt (a b : Prob) : Derivation :=
+  nd "identity_model" [] [hyp a] (.identity (wgt b))
+
+private def famQ : PriorFamily :=
+  { xName := "h", alpha := FPR, yName := "w", beta := FPR,
+    points := [(P 1 4, P 1 2), (P 1 2, P 1 4), (P 3 4, P 1 4)] }
+
+private def qPrior : Derivation :=
+  nd "I-P" [priorPt (P 1 4) (P 1 2), priorPt (P 1 2) (P 1 4),
+            priorPt (P 3 4) (P 1 4)] []
+    (.priorFamily famQ)
+
+/-- The posterior for the hypothesis the conclusion context selects (`h : FPR_½`,
+    index 1), given 4 hits in 8 audited runs. -/
+private def postQ : Prob :=
+  clampProb ((bayesianPosterior
+    [((P 1 4).val, (P 1 2).val), ((P 1 2).val, (P 1 4).val),
+     ((P 3 4).val, (P 1 4).val)] 4 8 1).getD 0)
+
+private def treeC : Derivation :=
+  nd "E-P" [qPrior, qET]
+    (ΓQ ++ [mQ, ⟨"q", S "q", FPR, ciQ⟩] ++ [hyp (P 1 2)])
+    (.identity (wgt postQ))
+
+-- ════════════════════════════════════════════════════════════════════
 
 def main : IO Unit := do
   IO.println "═══════════════════════════════════════════════════════════"
@@ -262,6 +334,11 @@ def main : IO Unit := do
   report "B.4' E+L on an OBSERVED sum (not a detour)" dPlusELdirect
   report "B.5  identity_star (cite from 2-entry model)" dModel
   report "B.6  TREE B (… → IT → ETex)" treeB
-  IO.println "\nRule coverage of these two trees"
-  let covered := ((rulesOf treeA ++ rulesOf treeB ++ rulesOf dPlusER ++ rulesOf dPlusELdirect).eraseDups)
+  IO.println "\nTree C — Bayesian reasoning over audited evidence"
+  report "C.1  I-P prior family (3 hypotheses, weights ≠ values)" qPrior
+  report "C.2  audit chain: sampling ×2 → update → IT → ET" qET
+  report "C.3  TREE C (E-P conditioning on the audited observation)" treeC
+  IO.println s!"         posterior for h : FPR_1/2  =  {postQ.val}"
+  IO.println "\nRule coverage of these trees"
+  let covered := ((rulesOf treeA ++ rulesOf treeB ++ rulesOf treeC ++ rulesOf dPlusER ++ rulesOf dPlusELdirect).eraseDups)
   IO.println s!"  {covered.length} distinct rules: {covered}"
