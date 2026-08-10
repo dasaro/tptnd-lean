@@ -207,7 +207,7 @@ private partial def renderTree (d : Derivation) (indent : String := "  ") : IO U
   Explicit assumptions pinned by the certificate:
     • identity leaf: model = 1/5 (national 20% benchmark)
     • obs leaf: data = White DE 2022, n = 24614
-    • IT node: score-test CI at 95% confidence
+    • IT node: acceptance band at level ≤ 5% (Chebyshev)
     • Conclusion: exact interval [ℓ, h]
 -/
 
@@ -242,7 +242,7 @@ private def treeA_benchmark : IO Unit := do
   IO.println "  │  (a) Every assumption is pinned in the certificate:        │"
   IO.println "  │    • identity leaf → model = 1/5                           │"
   IO.println "  │    • obs leaf     → data = White DE 2022, n = 24614        │"
-  IO.println "  │    • IT rule      → score-test CI at 95%                   │"
+  IO.println "  │    • IT rule      → acceptance band, level ≤ 5%             │"
   IO.println "  │  Change any one and the checker rejects the derivation.    │"
   IO.println "  └─────────────────────────────────────────────────────────────┘"
 

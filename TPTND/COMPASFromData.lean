@@ -285,6 +285,12 @@ private def deriveTrust_AAFemaleRecidFNR : IO Unit := do
   if inConstraint p_male ci then
     IO.println ""
     runTest "AA FNR Trust (IT) — paper's §4.3 reproduced from raw counts" dIT
+    -- ET^ex: the observed variable's own assumption is committed to the
+    -- trusted value and the claim re-enters the expected layer.
+    let rEx : ContextEntry := ⟨"r", mkSupport "AAFemaleRecid", LR, .exact p_male⟩
+    let dETex := nd "ETex" [dIT] [modelEntry, rEx]
+      (.term ⟨.expected, t, n_female, LR, p_male, σ⟩)
+    runTest "AA FNR ETex — expected layer re-entered at the trusted value" dETex
   else IO.println "  SKIP: benchmark not in CI"
 
 -- ============================================================================
@@ -317,7 +323,13 @@ private def deriveUTrust_AAFemaleFPR : IO Unit := do
   if notInConstraint p_male ci then
     IO.println ""
     runTest "AA FPR UTrust (IUT) — gender disparity in false positives" dIUT
-  else IO.println "  SKIP: benchmark IS in CI"
+  else do
+    -- The benchmark falls inside the band: the one-sample verdict is Trust,
+    -- agreeing with the two-sample tests (Derivations 9 and 12).
+    let trustClaim : TrustClaim := .trust .oneSample t n_female HR f_female p_male ci σ
+    let dIT := nd "IT" [dModel, dObs] [modelEntry, obsEntry] (.trust trustClaim)
+    IO.println ""
+    runTest "AA FPR Trust (IT) — benchmark inside the band at this level" dIT
 
 -- ============================================================================
 -- Derivation 5: ProPublica's main claim — racial bias in false positives
@@ -367,10 +379,17 @@ private def deriveUTrust_ProPublicaMain : IO Unit := do
   let modelEntry : ContextEntry := ⟨"w", mkSupport "WhiteNonRecid", HR, .exact p_white⟩
   let dModel := nd "identity" [] [modelEntry] (.identity modelEntry)
   let obsEntry : ContextEntry := ⟨"u", mkSupport "BlackNonRecid", HR, .unknown⟩
-  let dObs := nd "obs" [] [obsEntry] (.term ⟨.frequency, t, n_black, HR, f_black, σ⟩)
+  -- The Black non-recidivist cohort enters as two sub-batches (male, female)
+  -- pooled by UPDATE — the derivation displayed in the paper.
+  let dObsM := nd "obs" [] [obsEntry]
+    (.term ⟨.frequency, t, 1168, HR, P 510 1168, mkProv "σ_m"⟩)
+  let dObsF := nd "obs" [] [obsEntry]
+    (.term ⟨.frequency, t, 346, HR, P 131 346, mkProv "σ_f"⟩)
+  let dUpd := nd "update" [dObsM, dObsF] [obsEntry]
+    (.term ⟨.frequency, t, n_black, HR, f_black, σ⟩)
 
   let utrustClaim : TrustClaim := .untrust .oneSample t n_black HR f_black p_white ci σ
-  let dIUT := nd "IUT" [dModel, dObs] [modelEntry, obsEntry] (.trust utrustClaim)
+  let dIUT := nd "IUT" [dModel, dUpd] [modelEntry, obsEntry] (.trust utrustClaim)
 
   if notInConstraint p_white ci then
     IO.println ""
@@ -393,6 +412,16 @@ private def deriveUTrust_ProPublicaMain : IO Unit := do
     IO.println "  around the Black FPR (≈42%).  TPTND formally certifies this"
     IO.println "  as UTrust — the assumption that both races share the same"
     IO.println "  false-positive rate is statistically rejected."
+    -- EUT: the complement interval re-enters the typing context, giving the
+    -- transferable term claim displayed in the paper.
+    let compl := match ci with
+      | .interval lo hi => Constraint.outsideInterval lo hi
+      | other => other
+    let xu : ContextEntry := ⟨"u", mkSupport "BlackNonRecid", HR, compl⟩
+    let dEUT := nd "EUT" [dIUT] [modelEntry, obsEntry, xu]
+      (.term ⟨.frequency, t, n_black, HR, f_black, σ⟩)
+    IO.println ""
+    runTest "EUT: complement interval re-entered as audit assumption" dEUT
   else IO.println "  SKIP: benchmark IS in CI (unexpected!)"
 
 -- ============================================================================
@@ -406,23 +435,18 @@ private def deriveUTrust_ProPublicaMain : IO Unit := do
     H₂: rate = 1/3 ≈ 33.3%  (moderate — between White and Black rates)
     H₃: rate = 1/2 = 50.0%  (pessimistic — half flagged incorrectly)
 
-  Prior weights proportional to hypothesis values: b₁=1/6, b₂=1/3, b₃=1/2
-  (sums to 1 — a prior that gives more weight to higher-rate hypotheses).
+  Prior weights b = (1/2, 1/3, 1/6), summing to 1 and distinct from the
+  hypothesis values — a prior that favours the optimistic hypothesis.
 
   Pilot data: 5 non-recidivists, 2 flagged HighRisk → f = 2/5, s = 2.
 
-  Bayesian update:
-    W₁ = (1/6)² × (5/6)³ × 1/6 = 125/46656
-    W₂ = (1/3)² × (2/3)³ × 1/3 = 8/729 = 512/46656
-    W₃ = (1/2)² × (1/2)³ × 1/2 = 1/64 = 729/46656
+  Bayesian update (likelihood aᵢ²(1−aᵢ)³, weighted by bᵢ):
 
-    Total = (125 + 512 + 729)/46656 = 1366/46656
+    P(H₁|data) = 75/226   ≈ 33.2%  (down from 50.0%)
+    P(H₂|data) = 256/565  ≈ 45.3%  (up from 33.3%)
+    P(H₃|data) = 243/1130 ≈ 21.5%  (up from 16.7%)
 
-    P(H₁|data) = 125/1366 ≈  9.2%  (down from 16.7%)
-    P(H₂|data) = 512/1366 ≈ 37.5%  (up from 33.3%)
-    P(H₃|data) = 729/1366 ≈ 53.4%  (up from 50.0%)
-
-  The data shifts belief toward higher FPR hypotheses.
+  The pilot frequency f = 2/5 sits closest to H₂, so mass flows there.
 
   Derivation tree (for H₃ posterior):
 
@@ -434,7 +458,7 @@ private def deriveUTrust_ProPublicaMain : IO Unit := do
     obs
     {r} ⊢_{ρ} r₅ : FPR_{2/5}
     ═══════════════════════════════════════════════════════════════ E-P
-    {x : FPR_{1/2}} ⊢ result : FPR_{729/1366}
+    {x : FPR_{1/2}} ⊢ result : FPR_{243/1130}
 -/
 
 private def deriveBayesian : IO Unit := do
@@ -670,8 +694,8 @@ private def deriveNoExcess_FNR : IO Unit := do
 -- Derivation 9: AA FPR male vs female — IEx or INEx?
 -- ============================================================================
 /-
-  Derivation 4 used IUT (one-sample): female FPR (131/346) tested against
-  male benchmark (255/584). Result: UTrust (unfair).
+  Derivation 4 used the one-sample test: female FPR (131/346) against the
+  male benchmark (255/584); at the distribution-free level it gives Trust.
 
   Now try the two-sample Excess test: does male FPR *significantly exceed*
   female FPR?  CI for (male − female) may or may not contain 0.
@@ -722,25 +746,17 @@ private def deriveComparison_AAGenderFPR : IO Unit := do
 
     IO.println ""
     IO.println "  ┌─────────────────────────────────────────────────────────────┐"
-    IO.println "  │  DISCREPANCY WITH DERIVATION 4                             │"
+    IO.println "  │  AGREEMENT WITH DERIVATION 4                               │"
     IO.println "  └─────────────────────────────────────────────────────────────┘"
     IO.println ""
-    IO.println "  Derivation 4 (IUT, one-sample):  UTrust — unfair"
-    IO.println "  Derivation 9 (INEx, two-sample): NoExcess — fair"
+    IO.println "  Derivation 4 (one-sample, benchmark treated as known): Trust"
+    IO.println "  Derivation 9 (two-sample Excess test):                 NoExcess"
     IO.println ""
-    IO.println "  Both now use score-test (null-hypothesis) variance, but the"
-    IO.println "  structural difference is irreducible:"
-    IO.println "    • IUT:  SE = √( p(1−p) / n_data )"
-    IO.println "            Ignores uncertainty in the benchmark."
-    IO.println "    • INEx: SE = √( p̂(1−p̂) · (1/n₁ + 1/n₂) )"
-    IO.println "            Accounts for uncertainty in BOTH groups."
-    IO.println ""
-    IO.println "  The two-sample SE is always larger by factor √(1 + n_data/n_model)."
-    IO.println "  For this case: √(1 + 346/1168) = √1.296 ≈ 1.14 → 14% wider CI."
-    IO.println ""
-    IO.println "  Implication: Excess ⊂ UTrust. If IEx fires (Excess), IUT always"
-    IO.println "  fires too (UTrust). But IUT can fire without IEx — which is this"
-    IO.println "  borderline case. The Excess test is strictly more conservative."
+    IO.println "  Both readings agree: the gender gap in false-positive rates"
+    IO.println "  is not significant on these samples at the distribution-free"
+    IO.println "  level. They differ only in variance accounting: IT/IUT take"
+    IO.println "  the benchmark as a constant, the two-sample rules account"
+    IO.println "  for sampling uncertainty in both groups."
   else do
     -- 0 ∉ CI → Excess → IEx
     match probSub fM fF with
@@ -899,16 +915,15 @@ private def deriveIT2_borderline : IO Unit := do
     runTest "IT2: AA FPR gender (two-sample Trust — fair)" dIT2
     IO.println ""
     IO.println "  ┌─────────────────────────────────────────────────────────────┐"
-    IO.println "  │  RESOLUTION: IUT vs IT2 on the borderline case             │"
+    IO.println "  │  ONE-SAMPLE vs TWO-SAMPLE on the same question             │"
     IO.println "  └─────────────────────────────────────────────────────────────┘"
     IO.println ""
-    IO.println "  Derivation  4 (IUT,  one-sample): UTrust — unfair"
-    IO.println "  Derivation 12 (IT2,  two-sample): Trust  — fair"
+    IO.println "  Derivation  4 (IT,  one-sample): Trust — fair"
+    IO.println "  Derivation 12 (IT2, two-sample): Trust — fair"
     IO.println ""
-    IO.println "  Now the disagreement is between IUT and IT2 — two variants"
-    IO.println "  of the SAME rule family, differing only in variance estimate."
-    IO.println "  The auditor chooses which to apply based on whether the"
-    IO.println "  benchmark is a known constant (IUT) or estimated from data (IT2)."
+    IO.println "  The two variants of the same rule family agree here. The"
+    IO.println "  auditor chooses which to apply based on whether the benchmark"
+    IO.println "  is a known constant (IT/IUT) or estimated from data (IT2/IUT2)."
   else do
     IO.println ""
     runTest "IUT2: AA FPR gender (two-sample UTrust — unfair)" dIUT2
@@ -941,7 +956,7 @@ def main : IO Unit := do
   deriveTrust_AAFemaleRecidFNR
 
   IO.println ""
-  IO.println "─── 4. African-American FPR: UTrust (gender disparity) ───"
+  IO.println "─── 4. African-American FPR: one-sample test (gender) ───"
   IO.println ""
   deriveUTrust_AAFemaleFPR
 
@@ -998,18 +1013,18 @@ def main : IO Unit := do
   IO.println "  1  IT    Caucasian FNR (female vs male)    Trust  — fair"
   IO.println "  2  UPD   Caucasian recid. sub-batch pool   408/822"
   IO.println "  3  IT    AA FNR (female vs male)           Trust  — fair"
-  IO.println "  4  IUT   AA FPR (female vs male)           UTrust — unfair"
+  IO.println "  4  IT    AA FPR (female vs male)           Trust  — fair"
   IO.println "  5  IUT   ProPublica main (Black vs White)  UTrust — unfair"
-  IO.println "  6  E-P   Bayesian posterior (pilot)        729/1366 ≈ 53%"
+  IO.println "  6  E-P   Bayesian posterior (pilot)        H₃ ↦ 243/1130 ≈ 21%"
   IO.println "  7  IEx   Black FPR > White FPR             Excess"
   IO.println "  8  INEx  AA FNR female vs male             NoExcess"
-  IO.println "  9  INEx  AA FPR female vs male             NoExcess ← cf. #4"
+  IO.println "  9  INEx  AA FPR female vs male             NoExcess — agrees w/ #4"
   IO.println " 10  IUT2  ProPublica main (two-sample)      UTrust — agrees w/ #5"
   IO.println " 11  IT2   AA FNR (two-sample)               Trust  — agrees w/ #3"
-  IO.println " 12  IT2   AA FPR (two-sample)               Trust  ← cf. #4"
+  IO.println " 12  IT2   AA FPR (two-sample)               Trust  — agrees w/ #4"
   IO.println ""
-  IO.println " Key finding: IT2 subsumes IEx/INEx. Excess rules are redundant"
-  IO.println " once IT/IUT have one-sample and two-sample variants."
-  IO.println " The borderline case (#4 vs #12) is now a clean choice between"
-  IO.println " IUT (benchmark is known) and IT2 (benchmark is estimated)."
+  IO.println " All one-sample and two-sample verdicts agree on this data at"
+  IO.println " the distribution-free level.  The choice between IT/IUT and"
+  IO.println " IT2/IUT2 is whether the benchmark is a known constant or is"
+  IO.println " itself estimated from data."
   IO.println ""
